@@ -1,0 +1,2 @@
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'; import { Layout } from './components/Layout.jsx'; import { Dashboard } from './pages/Dashboard.jsx'; import { Jobs } from './pages/Jobs.jsx'; import { Applications } from './pages/Applications.jsx';
+const router = createBrowserRouter([{ element: <Layout/>, children: [{ path: '/', element: <Dashboard/> }, { path: '/jobs', element: <Jobs/> }, { path: '/applications', element: <Applications/> }] }]); export function App() { return <RouterProvider router={router}/>; }

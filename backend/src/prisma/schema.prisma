@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Candidate {
+  id             String   @id @default(cuid())
+  profileVersion String   @unique
+  profile        Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  resumes        Resume[]
+}
+
+model Resume {
+  id          String          @id @default(cuid())
+  candidateId String
+  sourcePath  String
+  contentHash String
+  createdAt   DateTime        @default(now())
+  candidate   Candidate       @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  versions    ResumeVersion[]
+}
+
+model ResumeVersion {
+  id            String        @id @default(cuid())
+  resumeId      String
+  jobId         String?
+  content       String
+  claims        Json
+  promptVersion String
+  createdAt     DateTime      @default(now())
+  resume        Resume        @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  applications  Application[]
+}
+
+model Job {
+  id            String           @id @default(cuid())
+  source        String
+  sourceJobId   String?
+  company       String
+  title         String
+  description   String
+  location      String?
+  employmentType String?
+  salary        String?
+  url           String
+  canonicalUrl  String
+  contentHash   String
+  postedAt      DateTime?
+  discoveredAt  DateTime         @default(now())
+  status        String           @default("DISCOVERED")
+  requirements  JobRequirement[]
+  matches       JobMatch[]
+  applications  Application[]
+  @@unique([source, sourceJobId])
+  @@unique([canonicalUrl])
+  @@index([company, title, location])
+  @@index([contentHash])
+}
+
+model JobRequirement {
+  id        String @id @default(cuid())
+  jobId     String
+  category  String
+  requirement String
+  mandatory Boolean @default(true)
+  job       Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model JobMatch {
+  id            String   @id @default(cuid())
+  jobId         String
+  profileVersion String
+  cacheKey      String   @unique
+  result        Json
+  provider      String
+  model         String
+  promptVersion String
+  tokenUsage    Json?
+  estimatedCost Decimal? @db.Decimal(12, 6)
+  createdAt     DateTime @default(now())
+  job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  @@index([jobId, profileVersion])
+}
+
+model Application {
+  id              String              @id @default(cuid())
+  jobId           String              @unique
+  resumeVersionId String?
+  status          String              @default("DISCOVERED")
+  browserStatus   String?
+  submissionUrl   String?
+  submittedAt     DateTime?
+  error           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  job             Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resumeVersion   ResumeVersion?      @relation(fields: [resumeVersionId], references: [id])
+  answers         ApplicationAnswer[]
+  events          ApplicationEvent[]
+  approvals       UserApproval[]
+}
+
+model ApplicationAnswer {
+  id            String      @id @default(cuid())
+  applicationId String
+  question      String
+  answer        String?
+  classification String
+  status        String
+  confidence    String
+  sourceRefs    Json
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model ApplicationEvent {
+  id            String      @id @default(cuid())
+  applicationId String
+  timestamp     DateTime    @default(now())
+  eventType     String
+  status        String
+  message       String
+  metadata      Json?
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  @@index([applicationId, timestamp])
+}
+
+model JobSource {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  type      String
+  config    Json
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AutomationRun {
+  id            String   @id @default(cuid())
+  type          String
+  idempotencyKey String  @unique
+  status        String
+  stats         Json     @default("{}")
+  estimatedCost Decimal? @db.Decimal(12, 6)
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+}
+
+model UserApproval {
+  id            String      @id @default(cuid())
+  applicationId String
+  approved      Boolean
+  actor         String
+  note          String?
+  createdAt     DateTime    @default(now())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}

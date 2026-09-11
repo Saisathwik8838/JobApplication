@@ -1,0 +1,39 @@
+# SAMPLE PROFILE — replace every value with accurate information before use.
+candidate:
+  name: "Your Name"
+  email: "you@example.com"
+  phone: "+91-0000000000"
+  location: "Bengaluru, India"
+education:
+  degree: "Bachelor of Technology"
+  branch: "Computer Science"
+  college: "Your College"
+  cgpa: 0
+  graduation_year: 2026
+experience:
+  years: 0
+  level: "Entry level"
+skills:
+  programming: ["JavaScript"]
+  backend: []
+  cloud: []
+  devops: []
+  databases: []
+  ai: []
+  frontend: []
+  core_cs: []
+projects: []
+preferences:
+  roles: []
+  locations: []
+  remote: true
+  hybrid: true
+  onsite: false
+  employment_types: ["full-time"]
+salary:
+  target: ""
+  minimum: ""
+rules:
+  minimum_match_score: 75
+  auto_prepare: true
+  require_approval: true

@@ -1,0 +1,2 @@
+import { describe, expect, it } from 'vitest'; import { canonicalizeUrl, contentHash } from '../../src/modules/jobs/hash.js';
+describe('job deduplication primitives', () => { it('removes tracking query data and normalizes descriptions', () => { expect(canonicalizeUrl('https://example.com/job/?utm_source=x#top')).toBe('https://example.com/job'); expect(contentHash('A  role')).toBe(contentHash('a role')); }); });

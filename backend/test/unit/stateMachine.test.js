@@ -1,0 +1,2 @@
+import { describe, expect, it } from 'vitest'; import { assertTransition, InvalidStateTransitionError } from '../../src/modules/applications/applicationStateMachine.js';
+describe('application state machine', () => { it('allows the review path', () => expect(() => assertTransition('AWAITING_APPROVAL', 'APPROVED')).not.toThrow()); it('rejects illegal submission', () => expect(() => assertTransition('DISCOVERED', 'SUBMITTED')).toThrow(InvalidStateTransitionError)); });

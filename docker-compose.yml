@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: jobagent
+      POSTGRES_USER: jobagent
+      POSTGRES_PASSWORD: jobagent
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobagent -d jobagent"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+  backend:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    env_file: .env.local
+    environment:
+      DATABASE_URL: postgresql://jobagent:jobagent@postgres:5432/jobagent?schema=public
+      REDIS_URL: redis://redis:6379
+      PROFILE_PATH: /app/profile/candidate_profile.yaml
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4.1-mini}
+      MATCH_THRESHOLD: ${MATCH_THRESHOLD:-75}
+      REQUIRE_APPROVAL: ${REQUIRE_APPROVAL:-true}
+      MAX_APPLICATIONS_PER_DAY: ${MAX_APPLICATIONS_PER_DAY:-20}
+      NOTIFICATION_FROM: ${NOTIFICATION_FROM:-job-agent@example.test}
+      HEADLESS: "true"
+    ports: ["3000:3000"]
+    command: sh -c "npx prisma migrate deploy --schema src/prisma/schema.prisma && node src/server.js"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+  worker:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    command: node src/workers/index.js
+    env_file: .env.local
+    environment:
+      DATABASE_URL: postgresql://jobagent:jobagent@postgres:5432/jobagent?schema=public
+      REDIS_URL: redis://redis:6379
+      PROFILE_PATH: /app/profile/candidate_profile.yaml
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4.1-mini}
+      MATCH_THRESHOLD: ${MATCH_THRESHOLD:-75}
+      REQUIRE_APPROVAL: ${REQUIRE_APPROVAL:-true}
+      MAX_APPLICATIONS_PER_DAY: ${MAX_APPLICATIONS_PER_DAY:-20}
+      NOTIFICATION_FROM: ${NOTIFICATION_FROM:-job-agent@example.test}
+      HEADLESS: "true"
+    depends_on:
+      backend: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  frontend:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    ports: ["5173:80"]
+    depends_on:
+      backend: { condition: service_healthy }
+volumes:
+  postgres_data:

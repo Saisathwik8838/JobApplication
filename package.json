@@ -1,0 +1,22 @@
+{
+  "name": "ai-powered-job-application-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["backend", "frontend", "packages/*"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:unit": "npm run test:unit -w backend",
+    "test:e2e": "npm run test:e2e -w backend",
+    "build": "npm run build --workspaces --if-present",
+    "eval": "node scripts/eval-matcher.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "eslint": "^9.19.0",
+    "eslint-config-prettier": "^10.0.1"
+  },
+  "engines": { "node": ">=20" }
+}

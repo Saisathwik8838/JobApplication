@@ -1,0 +1,4 @@
+[
+  { "job": { "description": "At least 5 years of experience required", "location": "Remote" }, "expectedEligible": false },
+  { "job": { "description": "Bachelor's degree preferred", "location": "Remote" }, "expectedEligible": true }
+]

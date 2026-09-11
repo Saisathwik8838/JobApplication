@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+playwright/.cache/
+playwright-report/
+test-results/
+storageState.json
+*.log
+backend/src/generated/
+*.pem
+*.key

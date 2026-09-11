@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+dist
+coverage
+test-results
+playwright-report
+.git
+.env
+.env.*
+!.env.example
+storageState.json
+*.log
+*.pem
+*.key
