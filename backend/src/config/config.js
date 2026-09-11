@@ -37,7 +37,12 @@ const configSchema = z.object({
   SMTP_USER: optionalString,
   SMTP_PASSWORD: optionalString,
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
-  HEADLESS: booleanFromString.default(false)
+  HEADLESS: booleanFromString.default(false),
+  JOB_SOURCES: z.string().default('remotive,sample'),
+  RSS_FEED_URLS: optionalString,
+  NOTIFICATION_CHANNELS: z.string().default('email,webhook'),
+  WEBHOOK_NOTIFICATION_URL: optionalString,
+  NOTIFICATION_TO: optionalString
 }).superRefine((value, context) => {
   if (value.LLM_PROVIDER === 'openai' && !value.OPENAI_API_KEY) context.addIssue({ code: z.ZodIssueCode.custom, path: ['OPENAI_API_KEY'], message: 'OPENAI_API_KEY is required when LLM_PROVIDER=openai' });
   if (value.LLM_PROVIDER === 'anthropic' && !value.ANTHROPIC_API_KEY) context.addIssue({ code: z.ZodIssueCode.custom, path: ['ANTHROPIC_API_KEY'], message: 'ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic' });

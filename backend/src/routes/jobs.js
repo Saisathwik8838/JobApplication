@@ -32,10 +32,24 @@ export function jobsRouter(dependencies) {
     let current = application.status === 'MATCHED' ? await transitionApplication(prisma, application.id, 'APPLICATION_PREPARED', { eventType: 'PREPARED', message: 'Tailored resume was prepared and truth-validated.' }) : application;
     const needsInput = answers.some((answer) => answer.status === 'NEEDS_USER_INPUT');
     if (needsInput && current.status === 'APPLICATION_PREPARED') current = await transitionApplication(prisma, application.id, 'NEEDS_USER_INPUT', { eventType: 'USER_INPUT_REQUIRED', message: 'One or more application answers require truthful user input.' });
-    if (!needsInput && current.status === 'APPLICATION_PREPARED') current = await transitionApplication(prisma, application.id, 'AWAITING_APPROVAL', { eventType: 'AWAITING_APPROVAL', message: 'Prepared application awaits explicit human approval.' });
+    if (!needsInput && current.status === 'APPLICATION_PREPARED') {
+      current = await transitionApplication(prisma, application.id, 'AWAITING_APPROVAL', { eventType: 'AWAITING_APPROVAL', message: 'Prepared application awaits explicit human approval.' });
+      if (queues && queues['notification']) {
+        await queues['notification'].add('approval-required', {
+          type: 'AWAITING_APPROVAL',
+          applicationId: current.id,
+          jobId: job.id,
+          title: `Action Required: Application Ready for Approval (${job.company})`,
+          subject: `Action Required: Application Ready for Approval (${job.company})`,
+          text: `Application materials (tailored resume and answers) are ready for ${job.title} at ${job.company}.\n\nPlease review and approve autofill at: http://localhost:5173/applications`,
+          to: profile?.candidate?.email,
+          metadata: { applicationId: current.id, jobId: job.id },
+        }, { jobId: `notify-approval-${current.id}-${Date.now()}` });
+      }
+    }
     response.status(201).json({ application: current, generated });
   } catch (error) { next(error); } });
-  router.post('/:id/approve', validate(idParams, 'params'), validate(actorSchema), async (request, response, next) => { try { const job = await getJobOrThrow(prisma, request.params.id); const application = job.applications[0]; if (!application) { const error = new Error('Prepare an application before approval.'); error.status = 409; throw error; } const approved = await transitionApplication(prisma, application.id, 'APPROVED', { eventType: 'APPROVED', message: 'Explicit human approval recorded.' }); await prisma.userApproval.create({ data: { applicationId: application.id, approved: true, actor: request.body.actor, note: request.body.note } }); await queues['browser-application'].add('submit-approved-application', { applicationId: application.id, idempotencyKey: `submit:${application.id}:${approved.updatedAt.toISOString()}` }, { jobId: `submit-${application.id}` }); response.json(approved); } catch (error) { next(error); } });
+  router.post('/:id/approve', validate(idParams, 'params'), validate(actorSchema), async (request, response, next) => { try { const job = await getJobOrThrow(prisma, request.params.id); const application = job.applications[0]; if (!application) { const error = new Error('Prepare an application before approval.'); error.status = 409; throw error; } const approved = await transitionApplication(prisma, application.id, 'APPROVED', { eventType: 'APPROVED', message: 'Explicit human approval recorded.' }); await prisma.userApproval.create({ data: { applicationId: application.id, approved: true, actor: request.body.actor, note: request.body.note } }); await queues['browser-application'].add('fill-application', { applicationId: application.id, mode: 'fill', idempotencyKey: `fill-${application.id}-${approved.updatedAt.getTime()}` }, { jobId: `fill-${application.id}-${approved.updatedAt.getTime()}` }); response.json(approved); } catch (error) { next(error); } });
   router.post('/:id/reject', validate(idParams, 'params'), validate(actorSchema), async (request, response, next) => { try { const job = await getJobOrThrow(prisma, request.params.id); const application = job.applications[0]; if (!application) { await prisma.job.update({ where: { id: job.id }, data: { status: 'REJECTED' } }); return response.status(204).end(); } const rejected = await transitionApplication(prisma, application.id, 'REJECTED', { eventType: 'REJECTED', message: 'User rejected application.' }); await prisma.userApproval.create({ data: { applicationId: application.id, approved: false, actor: request.body.actor, note: request.body.note } }); response.json(rejected); } catch (error) { next(error); } });
   return router;
 }

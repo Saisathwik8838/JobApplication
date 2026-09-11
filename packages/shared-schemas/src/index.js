@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
-/** @typedef {'DISCOVERED'|'ELIGIBLE'|'MATCHED'|'APPLICATION_PREPARED'|'AWAITING_APPROVAL'|'APPROVED'|'SUBMITTING'|'SUBMITTED'|'REJECTED'|'FAILED'|'NEEDS_USER_INPUT'|'MANUAL_INTERVENTION'} ApplicationStatus */
+/** @typedef {'DISCOVERED'|'ELIGIBLE'|'MATCHED'|'APPLICATION_PREPARED'|'AWAITING_APPROVAL'|'APPROVED'|'FILLING'|'FILLED_AWAITING_RECHECK'|'RESUBMIT_APPROVED'|'SUBMITTING'|'SUBMITTED'|'REJECTED'|'FAILED'|'NEEDS_USER_INPUT'|'MANUAL_INTERVENTION'} ApplicationStatus */
 /** @typedef {{ id:string, company:string, title:string, description:string, location?:string|null, employmentType?:string|null, salary?:string|null, url:string, status:string }} Job */
 /** @typedef {{ eligible:boolean, hardFailures:string[], warnings:string[] }} EligibilityResult */
 /** @typedef {{ matchScore:number, technicalMatch:number, experienceMatch:number, educationMatch:number, roleMatch:number, skillMatches:string[], missingSkills:string[], strengths:string[], concerns:string[], recommendation:'apply'|'review'|'reject', explanation:string }} JobMatchResult */
 /** @typedef {{ text:string, sourceReferences:string[], confidence:'high'|'medium'|'low', status:'READY'|'NEEDS_USER_INPUT' }} GeneratedContent */
 /** @typedef {{ candidate: CandidateProfile['candidate'], education: CandidateProfile['education'], experience: CandidateProfile['experience'], skills: CandidateProfile['skills'], projects: CandidateProfile['projects'], preferences: CandidateProfile['preferences'], salary: CandidateProfile['salary'], rules: CandidateProfile['rules'] }} CandidateProfile */
 
-export const applicationStatusSchema = z.enum(['DISCOVERED', 'ELIGIBLE', 'MATCHED', 'APPLICATION_PREPARED', 'AWAITING_APPROVAL', 'APPROVED', 'SUBMITTING', 'SUBMITTED', 'REJECTED', 'FAILED', 'NEEDS_USER_INPUT', 'MANUAL_INTERVENTION']);
+export const applicationStatusSchema = z.enum(['DISCOVERED', 'ELIGIBLE', 'MATCHED', 'APPLICATION_PREPARED', 'AWAITING_APPROVAL', 'APPROVED', 'FILLING', 'FILLED_AWAITING_RECHECK', 'RESUBMIT_APPROVED', 'SUBMITTING', 'SUBMITTED', 'REJECTED', 'FAILED', 'NEEDS_USER_INPUT', 'MANUAL_INTERVENTION']);
 export const candidateProfileSchema = z.object({
   candidate: z.object({ name: z.string().min(1), email: z.string().email(), phone: z.string().min(3), location: z.string().min(1) }),
   education: z.object({ degree: z.string().min(1), branch: z.string().min(1), college: z.string().min(1), cgpa: z.union([z.string(), z.number()]).optional(), graduation_year: z.coerce.number().int().min(1950).max(2100) }),

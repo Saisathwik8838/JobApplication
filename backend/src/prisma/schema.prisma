@@ -97,6 +97,8 @@ model Application {
   submissionUrl   String?
   submittedAt     DateTime?
   error           String?
+  filledData      Json?
+  screenshot      String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   job             Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
