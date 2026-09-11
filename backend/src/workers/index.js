@@ -1,11 +1,270 @@
-import { Worker } from 'bullmq'; import IORedis from 'ioredis'; import { PrismaClient } from '@prisma/client'; import { readFile } from 'node:fs/promises'; import { resolve } from 'node:path';
-import { loadConfig } from '../config/config.js'; import { logger } from '../logger.js'; import { loadCandidateProfile } from '../modules/candidate/profileRepository.js'; import { getLLMProvider } from '../modules/ai/providerFactory.js'; import { runDiscovery } from '../modules/jobs/discoveryService.js'; import { APIJobSource } from '../modules/jobs/sources/apiJobSource.js'; import { analyzeJob } from '../modules/matching/matchingService.js'; import { BrowserManager } from '../modules/browser/browserManager.js'; import { ApplicationSession } from '../modules/browser/applicationSession.js'; import { selectAdapter } from '../modules/browser/adapterRegistry.js'; import { SubmissionManager } from '../modules/browser/submissionManager.js'; import { transitionApplication } from '../modules/applications/applicationStateMachine.js'; import { EmailNotificationProvider } from '../modules/notifications/emailNotificationProvider.js';
+import { Worker } from 'bullmq';
+import IORedis from 'ioredis';
+import { PrismaClient } from '@prisma/client';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
 
-const config = loadConfig(); const prisma = new PrismaClient(); const connection = new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null }); const profilePath = resolve(process.cwd(), config.PROFILE_PATH); const { profile, version: profileVersion } = await loadCandidateProfile(profilePath); const masterResumePath = resolve(process.cwd(), '..', 'profile', 'resume', 'master_resume.md'); const provider = getLLMProvider({ ...config, logger });
-const workerOptions = { connection, concurrency: 2 };
-new Worker('job-discovery', async (job) => { const run = await prisma.automationRun.upsert({ where: { idempotencyKey: job.data.idempotencyKey }, update: {}, create: { type: 'job-discovery', idempotencyKey: job.data.idempotencyKey, status: 'RUNNING' } }); const stats = await runDiscovery({ prisma, sources: [new APIJobSource()], logger }); await prisma.automationRun.update({ where: { id: run.id }, data: { status: 'COMPLETED', stats, completedAt: new Date() } }); return stats; }, workerOptions);
-new Worker('ai-matching', async (job) => { const found = await prisma.job.findUnique({ where: { id: job.data.jobId } }); if (!found) throw new Error('Job no longer exists.'); return analyzeJob({ prisma, provider, profile, profileVersion, resumeText: await readFile(masterResumePath, 'utf8'), job: found, logger }); }, workerOptions);
-new Worker('browser-application', async (job) => { const application = await prisma.application.findUnique({ where: { id: job.data.applicationId }, include: { job: true, answers: true } }); if (!application || application.status !== 'APPROVED') return { skipped: true, reason: 'Application is not approved.' }; const manager = new BrowserManager({ headless: config.HEADLESS, logger }); return manager.withPage(async (page) => { await page.goto(application.job.url, { waitUntil: 'domcontentloaded' }); const adapter = await selectAdapter(application.job.url, page); if (!adapter) return transitionApplication(prisma, application.id, 'MANUAL_INTERVENTION', { eventType: 'NO_ADAPTER', message: 'No safe adapter exists for this application.' }); const session = new ApplicationSession({ page, job: application.job, application, answers: application.answers }); const filled = await adapter.fill(session); if (filled.status !== 'READY_FOR_REVIEW') return transitionApplication(prisma, application.id, 'MANUAL_INTERVENTION', { eventType: 'AUTOMATION_PAUSED', message: filled.reason ?? 'Automation requires manual intervention.', metadata: filled }); const submitting = await transitionApplication(prisma, application.id, 'SUBMITTING', { eventType: 'SUBMISSION_STARTED', message: 'Approved browser submission started.' }); const result = await new SubmissionManager({ requireApproval: config.REQUIRE_APPROVAL }).submit({ ...session, application: submitting }); if (result.status === 'SUBMITTED') { await prisma.application.update({ where: { id: application.id }, data: { submittedAt: new Date(), submissionUrl: result.confirmationUrl } }); return transitionApplication(prisma, application.id, 'SUBMITTED', { eventType: 'SUBMITTED', message: 'Submission confirmation captured.', metadata: result }); } return transitionApplication(prisma, application.id, 'MANUAL_INTERVENTION', { eventType: 'AUTOMATION_PAUSED', message: result.reason, metadata: result }); }); }, { ...workerOptions, concurrency: 1 });
-new Worker('notification', async (job) => new EmailNotificationProvider({ host: config.SMTP_HOST, port: config.SMTP_PORT, user: config.SMTP_USER, password: config.SMTP_PASSWORD, from: config.NOTIFICATION_FROM, logger }).send(job.data), workerOptions);
+import { loadConfig } from '../config/config.js';
+import { logger } from '../logger.js';
+import { loadCandidateProfile } from '../modules/candidate/profileRepository.js';
+import { getLLMProvider } from '../modules/ai/providerFactory.js';
+import { createQueues } from '../queues/queues.js';
+import { runDiscovery } from '../modules/jobs/discoveryService.js';
+import { SampleJobSource } from '../modules/jobs/sources/sampleJobSource.js';
+import { analyzeJob } from '../modules/matching/matchingService.js';
+import { BrowserManager } from '../modules/browser/browserManager.js';
+import { ApplicationSession } from '../modules/browser/applicationSession.js';
+import { selectAdapter } from '../modules/browser/adapterRegistry.js';
+import { SubmissionManager } from '../modules/browser/submissionManager.js';
+import { transitionApplication } from '../modules/applications/applicationStateMachine.js';
+import { EmailNotificationProvider } from '../modules/notifications/emailNotificationProvider.js';
+
+const config = loadConfig();
+const prisma = new PrismaClient();
+
+const connection = new IORedis(config.REDIS_URL, {
+  maxRetriesPerRequest: null,
+});
+
+const queues = createQueues(connection);
+
+let profilePath = resolve(process.cwd(), config.PROFILE_PATH);
+if (!existsSync(profilePath)) {
+  const alternate = resolve(process.cwd(), config.PROFILE_PATH.replace(/^\.\.\//, ''));
+  if (existsSync(alternate)) profilePath = alternate;
+}
+
+const { profile, version: profileVersion } =
+  await loadCandidateProfile(profilePath);
+
+let masterResumePath = resolve(dirname(profilePath), 'resume', 'master_resume.md');
+if (!existsSync(masterResumePath)) {
+  const fallback = resolve(process.cwd(), '..', 'profile', 'resume', 'master_resume.md');
+  if (existsSync(fallback)) masterResumePath = fallback;
+}
+
+const provider = getLLMProvider({
+  ...config,
+  logger,
+});
+
+const workerOptions = {
+  connection,
+  concurrency: 2,
+};
+
+new Worker(
+  'job-discovery',
+  async (job) => {
+    const run = await prisma.automationRun.upsert({
+      where: {
+        idempotencyKey: job.data.idempotencyKey,
+      },
+      update: {},
+      create: {
+        type: 'job-discovery',
+        idempotencyKey: job.data.idempotencyKey,
+        status: 'RUNNING',
+      },
+    });
+
+    const stats = await runDiscovery({
+      prisma,
+      sources: [new SampleJobSource()],
+      logger,
+      queues,
+    });
+
+    await prisma.automationRun.update({
+      where: {
+        id: run.id,
+      },
+      data: {
+        status: 'COMPLETED',
+        stats,
+        completedAt: new Date(),
+      },
+    });
+
+    return stats;
+  },
+  workerOptions,
+);
+
+new Worker(
+  'ai-matching',
+  async (job) => {
+    const found = await prisma.job.findUnique({
+      where: {
+        id: job.data.jobId,
+      },
+    });
+
+    if (!found) {
+      throw new Error('Job no longer exists.');
+    }
+
+    return analyzeJob({
+      prisma,
+      provider,
+      profile,
+      profileVersion,
+      resumeText: await readFile(masterResumePath, 'utf8'),
+      job: found,
+      logger,
+    });
+  },
+  workerOptions,
+);
+
+new Worker(
+  'browser-application',
+  async (job) => {
+    const application = await prisma.application.findUnique({
+      where: {
+        id: job.data.applicationId,
+      },
+      include: {
+        job: true,
+        answers: true,
+      },
+    });
+
+    if (!application || application.status !== 'APPROVED') {
+      return {
+        skipped: true,
+        reason: 'Application is not approved.',
+      };
+    }
+
+    const manager = new BrowserManager({
+      headless: config.HEADLESS,
+      logger,
+    });
+
+    return manager.withPage(async (page) => {
+      await page.goto(application.job.url, {
+        waitUntil: 'domcontentloaded',
+      });
+
+      const adapter = await selectAdapter(application.job.url, page);
+
+      if (!adapter) {
+        return transitionApplication(
+          prisma,
+          application.id,
+          'MANUAL_INTERVENTION',
+          {
+            eventType: 'NO_ADAPTER',
+            message: 'No safe adapter exists for this application.',
+          },
+        );
+      }
+
+      const session = new ApplicationSession({
+        page,
+        job: application.job,
+        application,
+        answers: application.answers,
+      });
+
+      const filled = await adapter.fill(session);
+
+      if (filled.status !== 'READY_FOR_REVIEW') {
+        return transitionApplication(
+          prisma,
+          application.id,
+          'MANUAL_INTERVENTION',
+          {
+            eventType: 'AUTOMATION_PAUSED',
+            message:
+              filled.reason ??
+              'Automation requires manual intervention.',
+            metadata: filled,
+          },
+        );
+      }
+
+      const submitting = await transitionApplication(
+        prisma,
+        application.id,
+        'SUBMITTING',
+        {
+          eventType: 'SUBMISSION_STARTED',
+          message: 'Approved browser submission started.',
+        },
+      );
+
+      const result = await new SubmissionManager({
+        requireApproval: config.REQUIRE_APPROVAL,
+      }).submit({
+        ...session,
+        application: submitting,
+      });
+
+      if (result.status === 'SUBMITTED') {
+        await prisma.application.update({
+          where: {
+            id: application.id,
+          },
+          data: {
+            submittedAt: new Date(),
+            submissionUrl: result.confirmationUrl,
+          },
+        });
+
+        return transitionApplication(
+          prisma,
+          application.id,
+          'SUBMITTED',
+          {
+            eventType: 'SUBMITTED',
+            message: 'Submission confirmation captured.',
+            metadata: result,
+          },
+        );
+      }
+
+      return transitionApplication(
+        prisma,
+        application.id,
+        'MANUAL_INTERVENTION',
+        {
+          eventType: 'AUTOMATION_PAUSED',
+          message: result.reason,
+          metadata: result,
+        },
+      );
+    });
+  },
+  {
+    ...workerOptions,
+    concurrency: 1,
+  },
+);
+
+new Worker(
+  'notification',
+  async (job) =>
+    new EmailNotificationProvider({
+      host: config.SMTP_HOST,
+      port: config.SMTP_PORT,
+      user: config.SMTP_USER,
+      password: config.SMTP_PASSWORD,
+      from: config.NOTIFICATION_FROM,
+      logger,
+    }).send(job.data),
+  workerOptions,
+);
+
 logger.info('Workers started');
-async function close() { await connection.quit(); await prisma.$disconnect(); process.exit(0); } process.on('SIGINT', close); process.on('SIGTERM', close);
+
+async function close() {
+  await connection.quit();
+  await prisma.$disconnect();
+  process.exit(0);
+}
+
+process.on('SIGINT', close);
+process.on('SIGTERM', close);

@@ -11,6 +11,7 @@ FROM dependencies AS runtime
 COPY backend backend
 COPY packages packages
 COPY profile profile
+COPY browser browser
 RUN npm run prisma:generate -w @job-agent/backend
 WORKDIR /app/backend
 EXPOSE 3000

@@ -10,6 +10,14 @@ const booleanFromString = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+const emptyToUndefined = (value) => {
+  if (typeof value === 'string' && value.trim() === '') return undefined;
+  return value;
+};
+
+const optionalString = z.preprocess(emptyToUndefined, z.string().min(1).optional());
+const optionalPositiveInt = z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional());
+
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -17,14 +25,17 @@ const configSchema = z.object({
   REDIS_URL: z.string().url(),
   LLM_PROVIDER: z.enum(['openai', 'anthropic']),
   LLM_MODEL: z.string().min(1),
-  OPENAI_API_KEY: z.string().min(1).optional(),
-  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  OPENAI_API_KEY: optionalString,
+  ANTHROPIC_API_KEY: optionalString,
   MATCH_THRESHOLD: z.coerce.number().min(0).max(100).default(75),
   REQUIRE_APPROVAL: booleanFromString,
   MAX_APPLICATIONS_PER_DAY: z.coerce.number().int().positive().default(20),
   PROFILE_PATH: z.string().min(1),
   NOTIFICATION_FROM: z.string().email(),
-  SMTP_HOST: z.string().optional(), SMTP_PORT: z.coerce.number().int().positive().optional(), SMTP_USER: z.string().optional(), SMTP_PASSWORD: z.string().optional(),
+  SMTP_HOST: optionalString,
+  SMTP_PORT: optionalPositiveInt,
+  SMTP_USER: optionalString,
+  SMTP_PASSWORD: optionalString,
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   HEADLESS: booleanFromString.default(false)
 }).superRefine((value, context) => {
