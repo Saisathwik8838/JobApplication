@@ -24,6 +24,7 @@ services:
       retries: 15
   backend:
     build: { context: ., dockerfile: backend/Dockerfile }
+    restart: unless-stopped
     env_file: .env.local
     environment:
       DATABASE_URL: postgresql://jobagent:jobagent@postgres:5432/jobagent?schema=public
@@ -35,10 +36,13 @@ services:
       REQUIRE_APPROVAL: ${REQUIRE_APPROVAL:-true}
       MAX_APPLICATIONS_PER_DAY: ${MAX_APPLICATIONS_PER_DAY:-20}
       NOTIFICATION_FROM: ${NOTIFICATION_FROM:-job-agent@example.test}
+      NOTIFICATION_TO: ${NOTIFICATION_TO:-}
       HEADLESS: "true"
       JOB_SOURCES: ${JOB_SOURCES:-remotive,arbeitnow}
       ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
       ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
+      DISCOVERY_INTERVAL_CRON: ${DISCOVERY_INTERVAL_CRON:-*/15 * * * *}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     ports: ["3000:3000"]
     command: sh -c "npx prisma migrate deploy --schema src/prisma/schema.prisma && node src/server.js"
     depends_on:
@@ -51,6 +55,7 @@ services:
       retries: 10
   worker:
     build: { context: ., dockerfile: backend/Dockerfile }
+    restart: unless-stopped
     command: node src/workers/index.js
     env_file: .env.local
     environment:
@@ -63,7 +68,13 @@ services:
       REQUIRE_APPROVAL: ${REQUIRE_APPROVAL:-true}
       MAX_APPLICATIONS_PER_DAY: ${MAX_APPLICATIONS_PER_DAY:-20}
       NOTIFICATION_FROM: ${NOTIFICATION_FROM:-job-agent@example.test}
+      NOTIFICATION_TO: ${NOTIFICATION_TO:-}
       HEADLESS: "true"
+      JOB_SOURCES: ${JOB_SOURCES:-remotive,arbeitnow}
+      ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
+      ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
+      DISCOVERY_INTERVAL_CRON: ${DISCOVERY_INTERVAL_CRON:-*/15 * * * *}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     depends_on:
       backend: { condition: service_healthy }
       postgres: { condition: service_healthy }
