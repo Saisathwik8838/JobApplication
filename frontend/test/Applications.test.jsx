@@ -33,6 +33,7 @@ describe('Applications Page - Actionable Manual Intervention UX', () => {
       title: 'Backend Software Engineer',
       url: 'https://careers.google.com/jobs/1',
       location: 'Hyderabad, India',
+      source: 'adzuna',
     },
     answers: [
       {
@@ -58,6 +59,9 @@ describe('Applications Page - Actionable Manual Intervention UX', () => {
     render(<Applications />);
 
     await waitFor(() => {
+      // Source attribution
+      expect(screen.getByText(/Source: adzuna/i)).toBeInTheDocument();
+
       // 1. Heading
       expect(screen.getByText(/Needs Your Help to Finish/i)).toBeInTheDocument();
 

@@ -4,6 +4,7 @@ import { ArbeitnowJobSource } from '../../src/modules/jobs/sources/arbeitnowJobS
 import { AdzunaJobSource } from '../../src/modules/jobs/sources/adzunaJobSource.js';
 import { createJobSources } from '../../src/modules/jobs/sourceFactory.js';
 import { analyzeJob } from '../../src/modules/matching/matchingService.js';
+import { runDiscovery } from '../../src/modules/jobs/discoveryService.js';
 
 describe('Job Sources and India Localization Unit Tests', () => {
   const originalFetch = globalThis.fetch;
@@ -236,6 +237,66 @@ describe('Job Sources and India Localization Unit Tests', () => {
       // Original match was 80, should receive +10 location boost = 90
       expect(result.match.matchScore).toBe(90);
       expect(result.match.strengths.some((s) => s.includes('Location matches candidate preference'))).toBe(true);
+    });
+  });
+
+  describe('Discovery Summary Notification & Source Attribution', () => {
+    it('enqueues discovery-summary notification with source attribution when new jobs are created', async () => {
+      const mockJob = {
+        source: 'arbeitnow',
+        sourceJobId: 'job-arbeit-123',
+        company: 'Razorpay',
+        title: 'Backend Engineer',
+        description: 'Design and build resilient payment gateways in Node.js.',
+        location: 'Bengaluru, India',
+        url: 'https://arbeitnow.com/jobs/123',
+      };
+
+      const mockSource = {
+        name: 'arbeitnow',
+        discover: vi.fn().mockResolvedValue([mockJob]),
+      };
+
+      const mockPrisma = {
+        job: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'db-job-1', ...mockJob }),
+        },
+        candidate: {
+          findFirst: vi.fn().mockResolvedValue({
+            profile: { identity: { email: 'candidate@example.in' } },
+          }),
+        },
+      };
+
+      const mockNotificationQueue = {
+        add: vi.fn().mockResolvedValue({ id: 'notif-1' }),
+      };
+
+      const queues = {
+        'notification': mockNotificationQueue,
+      };
+
+      const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn() };
+
+      const stats = await runDiscovery({
+        prisma: mockPrisma,
+        sources: [mockSource],
+        logger,
+        queues,
+      });
+
+      expect(stats.created).toBe(1);
+      expect(mockNotificationQueue.add).toHaveBeenCalledWith(
+        'discovery-summary',
+        expect.objectContaining({
+          type: 'DISCOVERY_SUMMARY',
+          subject: 'New jobs found: 1 added',
+          to: 'candidate@example.in',
+          text: expect.stringContaining('(Source: arbeitnow)'),
+        }),
+        expect.anything()
+      );
     });
   });
 });

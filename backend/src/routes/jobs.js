@@ -64,7 +64,7 @@ export function jobsRouter(dependencies) {
         };
       }
 
-      const [items, total] = await Promise.all([
+      const [items, total, lastRun] = await Promise.all([
         prisma.job.findMany({
           where,
           orderBy: { discoveredAt: 'desc' },
@@ -83,10 +83,12 @@ export function jobsRouter(dependencies) {
           },
         }),
         prisma.job.count({ where }),
-        prisma.automationRun.findFirst({
-          where: { type: 'job-discovery', status: 'COMPLETED' },
-          orderBy: { completedAt: 'desc' },
-        }),
+        prisma.automationRun?.findFirst
+          ? prisma.automationRun.findFirst({
+              where: { type: 'job-discovery', status: 'COMPLETED' },
+              orderBy: { completedAt: 'desc' },
+            })
+          : Promise.resolve(null),
       ]);
 
       response.json({
@@ -317,8 +319,8 @@ export function jobsRouter(dependencies) {
               jobId: job.id,
               title: `Action Required: Application Ready for Approval (${job.company})`,
               subject: `Action Required: Application Ready for Approval (${job.company})`,
-              text: `Application materials (tailored resume and answers) are ready for ${job.title} at ${job.company}.\n\nPlease review and approve autofill at: http://localhost:5173/applications`,
-              to: userProfileData.profile?.candidate?.email,
+              text: `Application materials (tailored resume and answers) are ready for ${job.title} at ${job.company}.\n\nPlease review and approve autofill at: ${config?.FRONTEND_URL || 'http://localhost:5173'}/applications`,
+              to: userProfileData.profile?.identity?.email || userProfileData.profile?.candidate?.email || request.user?.email || config?.NOTIFICATION_TO || 'candidate@example.com',
               metadata: { applicationId: current.id, jobId: job.id },
             },
             { jobId: `notify-approval-${current.id}-${Date.now()}` }

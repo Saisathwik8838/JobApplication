@@ -37,10 +37,12 @@ export function dashboardRouter({ prisma }) {
             },
           },
         }),
-        prisma.automationRun.findFirst({
-          where: { type: 'job-discovery', status: 'COMPLETED' },
-          orderBy: { completedAt: 'desc' },
-        }),
+        prisma.automationRun?.findFirst
+          ? prisma.automationRun.findFirst({
+              where: { type: 'job-discovery', status: 'COMPLETED' },
+              orderBy: { completedAt: 'desc' },
+            })
+          : Promise.resolve(null),
       ]);
 
       const get = (items, status) => items?.find?.((item) => item.status === status)?._count ?? 0;

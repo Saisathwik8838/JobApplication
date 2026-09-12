@@ -177,7 +177,7 @@ export function Applications() {
                   </a>
                 </h3>
                 <small style={{ color: '#64748b' }}>
-                  Location: {item.job.location || 'Remote/Unspecified'} • ID: {item.id.slice(0, 8)}… • Updated: {new Date(item.updatedAt).toLocaleTimeString()}
+                  Location: {item.job.location || 'Remote/Unspecified'} • Source: {item.job.source || 'Direct'} • ID: {item.id.slice(0, 8)}… • Updated: {new Date(item.updatedAt).toLocaleTimeString()}
                 </small>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>

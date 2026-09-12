@@ -36,8 +36,9 @@ export class NotificationDispatcher {
     const results = {};
 
     if (this.channels.includes('email')) {
+      const recipient = message.to || process.env.NOTIFICATION_TO || 'candidate@example.com';
       results.email = await this.emailProvider.send({
-        to: message.to ?? 'candidate@example.com',
+        to: recipient,
         subject: message.subject,
         text: message.text,
       });

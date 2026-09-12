@@ -130,8 +130,8 @@ export function applicationsRouter({ prisma, queues, profile }) {
                   jobId: app.jobId,
                   title: `Action Required: Application Ready for Approval (${app.job?.company})`,
                   subject: `Action Required: Application Ready for Approval (${app.job?.company})`,
-                  text: `All answers are resolved for ${app.job?.title} at ${app.job?.company}.\nPlease review and approve autofill at: http://localhost:5173/applications`,
-                  to: profile?.candidate?.email,
+                  text: `All answers are resolved for ${app.job?.title} at ${app.job?.company}.\nPlease review and approve autofill at: ${process.env.FRONTEND_URL || 'http://localhost:5173'}/applications`,
+                  to: profile?.identity?.email || profile?.candidate?.email || request.user?.email || process.env.NOTIFICATION_TO || 'candidate@example.com',
                   metadata: { applicationId: app.id, jobId: app.jobId },
                 },
                 { jobId: `notify-approval-${app.id}-${Date.now()}` }

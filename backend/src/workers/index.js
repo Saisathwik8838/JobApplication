@@ -211,16 +211,17 @@ new Worker(
           {
             type: 'HIGH_MATCH',
             subject: `High Match Alert: ${found.title} at ${found.company} (${Math.round(result.matchScore * 100)}%)`,
-            text: `Found a strong match for your profile!\n\nRole: ${found.title}\nCompany: ${found.company}\nMatch Score: ${Math.round(result.matchScore * 100)}%\nRecommendation: ${result.recommendation}\n\nExplanation:\n${result.explanation || result.reasoning || 'Strong alignment with your background.'}\n\nReview job and prepare application:\nhttp://localhost:5173/jobs?selected=${found.id}`,
-            to: targetProfile?.candidate?.email || config.NOTIFICATION_TO || 'candidate@example.com',
+            text: `Found a strong match for your profile!\n\nRole: ${found.title}\nCompany: ${found.company}\nSource: ${found.source || 'Direct'}\nMatch Score: ${Math.round(result.matchScore * 100)}%\nRecommendation: ${result.recommendation}\n\nExplanation:\n${result.explanation || result.reasoning || 'Strong alignment with your background.'}\n\nReview job and prepare application:\n${config.FRONTEND_URL || 'http://localhost:5173'}/jobs?selected=${found.id}`,
+            to: targetProfile?.identity?.email || targetProfile?.candidate?.email || config.NOTIFICATION_TO || 'candidate@example.com',
             metadata: {
               jobId: found.id,
               jobTitle: found.title,
               company: found.company,
+              source: found.source,
               url: found.url,
               matchScore: result.matchScore,
               recommendation: result.recommendation,
-              actionUrl: `http://localhost:5173/jobs?selected=${found.id}`,
+              actionUrl: `${config.FRONTEND_URL || 'http://localhost:5173'}/jobs?selected=${found.id}`,
             },
           },
           {
@@ -262,6 +263,7 @@ new Worker(
 
     const userProfile = application.user?.candidate?.profile || profile;
     const userEmail =
+      userProfile?.identity?.email ||
       userProfile?.candidate?.email ||
       application.user?.email ||
       config.NOTIFICATION_TO ||

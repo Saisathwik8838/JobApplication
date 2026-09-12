@@ -71,4 +71,29 @@ describe('Notification System', () => {
 
     expect(result.webhook.delivered).toBe(true);
   });
+
+  it('uses candidate email recipient when provided and passes to email provider', async () => {
+    const dispatcher = new NotificationDispatcher({
+      channels: 'email',
+      emailConfig: { from: 'agent@example.test' },
+      webhookConfig: {},
+      logger: mockLogger,
+    });
+
+    // Mock send method on emailProvider
+    dispatcher.emailProvider.send = vi.fn().mockResolvedValue({ delivered: true, recipient: 'sai@example.com' });
+
+    await dispatcher.send({
+      to: 'sai@example.com',
+      subject: 'High Match Alert',
+      text: 'Found a job',
+    });
+
+    expect(dispatcher.emailProvider.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'sai@example.com',
+        subject: 'High Match Alert',
+      })
+    );
+  });
 });
