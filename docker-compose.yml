@@ -36,6 +36,9 @@ services:
       MAX_APPLICATIONS_PER_DAY: ${MAX_APPLICATIONS_PER_DAY:-20}
       NOTIFICATION_FROM: ${NOTIFICATION_FROM:-job-agent@example.test}
       HEADLESS: "true"
+      JOB_SOURCES: ${JOB_SOURCES:-remotive,arbeitnow}
+      ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
+      ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
     ports: ["3000:3000"]
     command: sh -c "npx prisma migrate deploy --schema src/prisma/schema.prisma && node src/server.js"
     depends_on:

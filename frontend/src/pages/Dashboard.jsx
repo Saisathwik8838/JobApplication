@@ -30,6 +30,24 @@ export function Dashboard() {
 
   return (
     <section>
+      {data.isSampleSourceActive && (
+        <div
+          role="alert"
+          style={{
+            background: '#fffbeb',
+            border: '1px solid #fde68a',
+            color: '#92400e',
+            padding: '0.85rem 1.25rem',
+            borderRadius: '8px',
+            marginBottom: '1.5rem',
+            fontSize: '0.9rem',
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>⚠️ Demo Mode Active (Synthetic Jobs):</strong> No live job sources are configured, so the agent is generating synthetic sample jobs. Configure <code>JOB_SOURCES=remotive,arbeitnow</code> (and optional Adzuna keys) in your environment to discover real opportunities.
+        </div>
+      )}
+
       <h2>Today’s pipeline</h2>
       <div className="cards">
         {Object.entries(labels).map(([key, label]) => (

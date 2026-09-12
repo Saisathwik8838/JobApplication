@@ -1,12 +1,14 @@
 import { Router } from 'express';
+import { isSampleFallbackActive } from '../modules/jobs/sourceFactory.js';
 
 /** @param {import('../app.js').AppDependencies} dependencies */
-export function dashboardRouter({ prisma }) {
+export function dashboardRouter({ prisma, sources = [] }) {
   const router = Router();
 
   router.get('/', async (request, response, next) => {
     try {
       const userId = request.user?.id;
+      const isSampleSourceActive = isSampleFallbackActive(sources);
       const [jobs, applications, highQualityMatches, candidateJobs] = await Promise.all([
         prisma.job.groupBy({ by: ['status'], _count: true }),
         prisma.application.groupBy({
@@ -75,6 +77,7 @@ export function dashboardRouter({ prisma }) {
         failed: get(applications, 'FAILED'),
         interviews: get(applications, 'INTERVIEW'),
         topMatches,
+        isSampleSourceActive,
       });
     } catch (error) {
       next(error);

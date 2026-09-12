@@ -39,12 +39,21 @@ const configSchema = z.object({
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   JWT_SECRET: z.string().default('dev-secret-job-agent-jwt-change-in-production'),
   HEADLESS: booleanFromString.default(false),
-  JOB_SOURCES: z.string().default('remotive'),
+  JOB_SOURCES: z.string().default('remotive,arbeitnow'),
+  ADZUNA_APP_ID: optionalString,
+  ADZUNA_APP_KEY: optionalString,
   RSS_FEED_URLS: optionalString,
   NOTIFICATION_CHANNELS: z.string().default('email,webhook'),
   WEBHOOK_NOTIFICATION_URL: optionalString,
   NOTIFICATION_TO: optionalString
 }).superRefine((value, context) => {
+  if (value.NODE_ENV !== 'development' && value.JWT_SECRET === 'dev-secret-job-agent-jwt-change-in-production') {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_SECRET'],
+      message: 'JWT_SECRET must be explicitly configured in non-development environments instead of using the default secret.',
+    });
+  }
   if (value.LLM_PROVIDER === 'openai' && !value.OPENAI_API_KEY) context.addIssue({ code: z.ZodIssueCode.custom, path: ['OPENAI_API_KEY'], message: 'OPENAI_API_KEY is required when LLM_PROVIDER=openai' });
   if (value.LLM_PROVIDER === 'anthropic' && !value.ANTHROPIC_API_KEY) context.addIssue({ code: z.ZodIssueCode.custom, path: ['ANTHROPIC_API_KEY'], message: 'ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic' });
   if (value.REQUIRE_APPROVAL !== true) context.addIssue({ code: z.ZodIssueCode.custom, path: ['REQUIRE_APPROVAL'], message: 'REQUIRE_APPROVAL must be true. Gate 1 human approval is required before browser automation starts, and automation may not submit while any required answer is unresolved.' });

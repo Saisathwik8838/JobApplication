@@ -19,7 +19,29 @@ export async function analyzeJob(dependencies) {
   const cached = await prisma.jobMatch.findUnique({ where: { cacheKey } });
   if (cached) return { eligibility, match: jobMatchResultSchema.parse(cached.result), cached: true };
   const response = await provider.analyzeJob({ profile, resumeText, job });
-  const { _meta, ...match } = response; const validated = jobMatchResultSchema.parse(match);
+  const { _meta, ...match } = response;
+  const parsed = jobMatchResultSchema.parse(match);
+
+  // Location preference boost: give real score advantage to candidate preferred locations
+  const preferredLocations = profile.preferences?.locations || [];
+  const jobLoc = (job.location || '').toLowerCase();
+  const isPreferredLoc = preferredLocations.some((prefLoc) => {
+    const p = prefLoc.toLowerCase().trim();
+    return p && (jobLoc.includes(p) || p.includes(jobLoc));
+  });
+
+  let matchScore = parsed.matchScore;
+  const strengths = [...parsed.strengths];
+  if (isPreferredLoc && jobLoc) {
+    matchScore = Math.min(100, matchScore + 10);
+    strengths.push(`Location matches candidate preference: ${job.location}`);
+  }
+
+  const validated = {
+    ...parsed,
+    matchScore,
+    strengths,
+  };
   await prisma.$transaction([
     prisma.jobMatch.create({
       data: {
