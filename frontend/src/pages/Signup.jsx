@@ -9,11 +9,13 @@ export function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
     if (password.length < 8) {
       setError('Password must be at least 8 characters');
       return;
@@ -25,6 +27,9 @@ export function Signup() {
       navigate('/');
     } catch (err) {
       setError(err.message || 'Signup failed');
+      if (err.details?.fieldErrors) {
+        setFieldErrors(err.details.fieldErrors);
+      }
     } finally {
       setLoading(false);
     }
@@ -32,6 +37,7 @@ export function Signup() {
 
   const handleGoogleSuccess = async (credentialResponse) => {
     setError('');
+    setFieldErrors({});
     setLoading(true);
     try {
       const res = await post('/api/auth/google', {
@@ -55,7 +61,16 @@ export function Signup() {
 
       {error && (
         <div role="alert" style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b', padding: '0.75rem', borderRadius: '6px', marginBottom: '1.25rem', fontSize: '0.875rem' }}>
-          {error}
+          <div>{error}</div>
+          {fieldErrors && Object.keys(fieldErrors).length > 0 && (
+            <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem', fontSize: '0.8rem' }}>
+              {Object.entries(fieldErrors).map(([field, msgs]) => (
+                <li key={field}>
+                  <strong>{field}:</strong> {Array.isArray(msgs) ? msgs.join(', ') : String(msgs)}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
