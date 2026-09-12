@@ -93,4 +93,18 @@ describe('Profile Page Component Tests', () => {
       expect(screen.getByText(/Profile and Master Resume updated successfully!/i)).toBeInTheDocument();
     });
   });
+
+  it('renders India-first defaults when workAuthorization is not set and displays LPA salary label', async () => {
+    client.get.mockResolvedValueOnce({
+      user: { id: 'usr-1', email: 'test@example.com', name: 'Test User' },
+      profile: {},
+    });
+
+    render(<Profile />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Work Authorization/i)).toHaveValue('Indian citizen — no sponsorship required');
+      expect(screen.getByLabelText(/Minimum Annual Salary \(INR, LPA\)/i)).toBeInTheDocument();
+    });
+  });
 });

@@ -61,7 +61,7 @@ export function Profile() {
         setTargetLocations(Array.isArray(locList) ? locList.join(', ') : String(locList || ''));
 
         setMinSalary(pref.minSalary != null ? String(pref.minSalary) : '');
-        setWorkAuthorization(pref.workAuthorization || 'US Citizen');
+        setWorkAuthorization(pref.workAuthorization || 'Indian citizen — no sponsorship required');
 
         const rawSkills = p.skills || [];
         let skillsList = [];
@@ -215,7 +215,7 @@ export function Profile() {
                 type="text"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+1 (555) 000-0000"
+                placeholder="+91 98765 43210"
                 style={{ width: '100%', padding: '0.55rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
               />
             </div>
@@ -226,7 +226,7 @@ export function Profile() {
                 type="text"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                placeholder="San Francisco, CA or Remote"
+                placeholder="Hyderabad, Bengaluru, or Remote"
                 style={{ width: '100%', padding: '0.55rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
               />
             </div>
@@ -318,23 +318,23 @@ export function Profile() {
                 type="text"
                 value={workAuthorization}
                 onChange={(e) => setWorkAuthorization(e.target.value)}
-                placeholder="US Citizen / Green Card / Authorized"
+                placeholder="Indian citizen / Requires visa sponsorship / OCI"
                 style={{ width: '100%', padding: '0.55rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
               />
             </div>
 
             <div>
               <label htmlFor="prof-minsalary" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
-                Minimum Base Salary (USD)
+                Minimum Annual Salary (INR, LPA)
               </label>
               <input
                 id="prof-minsalary"
                 type="number"
                 min="0"
-                step="1000"
+                step="0.5"
                 value={minSalary}
                 onChange={(e) => setMinSalary(e.target.value)}
-                placeholder="e.g. 100000"
+                placeholder="e.g. 12"
                 style={{ width: '100%', padding: '0.55rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
               />
             </div>
@@ -362,7 +362,7 @@ export function Profile() {
                 type="text"
                 value={targetLocations}
                 onChange={(e) => setTargetLocations(e.target.value)}
-                placeholder="Remote, San Francisco, New York"
+                placeholder="Hyderabad, Bengaluru, Pune, Remote"
                 style={{ width: '100%', padding: '0.55rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
               />
             </div>

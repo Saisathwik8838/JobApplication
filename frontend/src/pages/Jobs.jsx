@@ -502,7 +502,7 @@ export function Jobs() {
             <input
               id="filter-location"
               type="text"
-              placeholder="e.g. Remote, SF"
+              placeholder="e.g. Remote, Bengaluru, Hyderabad"
               value={locationFilter}
               onChange={(e) => handleTextFilterChange(setLocationFilter, 'location', e.target.value)}
               style={{ width: '100%', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
