@@ -3,6 +3,27 @@ import { get, post, patch } from '../api/client.js';
 import { Status } from '../components/Status.jsx';
 import { FormRecheckReview } from '../components/FormRecheckReview.jsx';
 
+export function getFriendlyErrorMessage(rawError) {
+  if (!rawError) return 'Automation stopped safely and needs manual assistance to complete.';
+  const lower = rawError.toLowerCase();
+  if (lower.includes('captcha')) {
+    return 'The site showed a CAPTCHA the agent cannot solve.';
+  }
+  if (lower.includes('submit button') || lower.includes('expected submit button')) {
+    return "The agent couldn't find a submit button on this page.";
+  }
+  if (lower.includes('verification') || lower.includes('mismatch')) {
+    return 'Form fields changed after autofill and no longer match the reviewed snapshot.';
+  }
+  if (lower.includes('no adapter') || lower.includes('safe adapter')) {
+    return 'This application portal requires a specialized form layout that must be filled manually.';
+  }
+  if (lower.includes('browser launch') || lower.includes('browser error')) {
+    return 'The browser automation session encountered a connection or browser launch error.';
+  }
+  return rawError;
+}
+
 export function Applications() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
@@ -10,6 +31,7 @@ export function Applications() {
   const [editingAnswers, setEditingAnswers] = useState({});
   const [selectedScreenshot, setSelectedScreenshot] = useState(null);
   const [actionInProgress, setActionInProgress] = useState({});
+  const [copiedField, setCopiedField] = useState('');
 
   const reload = () =>
     get('/api/applications')
@@ -90,11 +112,26 @@ export function Applications() {
       `Refill requested for ${app.job.company}. Form will be re-filled with updated answers.`
     );
 
+  const copyToClipboard = (text, fieldName) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+    setCopiedField(fieldName);
+    setTimeout(() => setCopiedField(''), 2500);
+  };
+
   const retryApp = (app) =>
     handleAction(
       app.id,
       () => post(`/api/applications/${app.id}/retry`),
       `Retrying application for ${app.job.company}.`
+    );
+
+  const markSubmitted = (app) =>
+    handleAction(
+      app.id,
+      () => post(`/api/applications/${app.id}/mark-submitted`, { actor: 'candidate', note: 'Manually submitted by candidate' }),
+      `Application for ${app.job.company} marked as submitted.`
     );
 
   return (
@@ -143,8 +180,13 @@ export function Applications() {
                   Location: {item.job.location || 'Remote/Unspecified'} • ID: {item.id.slice(0, 8)}… • Updated: {new Date(item.updatedAt).toLocaleTimeString()}
                 </small>
               </div>
-              <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <Status value={item.status} />
+                {item.status === 'FAILED' && item.error && (
+                  <span style={{ fontSize: '0.8rem', color: '#991b1b', background: '#fee2e2', padding: '0.2rem 0.5rem', borderRadius: '4px', maxWidth: '350px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.error}>
+                    {item.error}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -250,22 +292,162 @@ export function Applications() {
               </div>
             )}
 
-            {/* ERROR / MANUAL INTERVENTION */}
+            {/* NEEDS YOUR HELP TO FINISH (MANUAL INTERVENTION / FAILED) */}
             {isManualIntervention && (
-              <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '6px', padding: '0.85rem', marginTop: '1rem' }}>
-                <p style={{ margin: '0 0 0.5rem 0', color: '#9f1239', fontWeight: 600 }}>
-                  Manual Intervention Required
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '1.25rem', marginTop: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '1.25rem' }}>🤝</span>
+                  <h4 style={{ margin: 0, color: '#92400e', fontSize: '1.1rem' }}>
+                    Needs Your Help to Finish
+                  </h4>
+                </div>
+
+                <p style={{ margin: '0 0 0.5rem 0', color: '#78350f', fontSize: '0.95rem', lineHeight: 1.4, fontWeight: 500 }}>
+                  {getFriendlyErrorMessage(item.error)}
                 </p>
-                <p style={{ margin: '0 0 0.75rem 0', color: '#881337', fontSize: '0.9rem' }}>
-                  Automation paused safely. You can inspect the application or trigger a safe retry:
-                </p>
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => retryApp(item)}
-                >
-                  {isBusy ? 'Retrying…' : 'Retry safely'}
-                </button>
+
+                {item.error && (
+                  <div style={{ fontSize: '0.8rem', color: '#92400e', background: '#fef3c7', padding: '0.35rem 0.6rem', borderRadius: '4px', marginBottom: '1rem', fontFamily: 'monospace' }}>
+                    Details: {item.error}
+                  </div>
+                )}
+
+                {/* Primary CTA: Open Application & Finish It Yourself */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <a
+                    href={item.submissionUrl || item.job.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.65rem 1.25rem',
+                      background: '#2563eb',
+                      color: '#fff',
+                      borderRadius: '6px',
+                      fontWeight: 700,
+                      textDecoration: 'none',
+                      fontSize: '0.95rem',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                    }}
+                  >
+                    Open Application &amp; Finish It Yourself ↗
+                  </a>
+                  <small style={{ display: 'block', color: '#64748b', marginTop: '0.35rem' }}>
+                    Opens the real application page where automation paused. Use the quick-copy facts below to paste into the form.
+                  </small>
+                </div>
+
+                {/* What the agent already knows */}
+                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '1rem', marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <strong style={{ fontSize: '0.9rem', color: '#1e293b' }}>
+                      📋 What the agent already knows (Click to copy into form):
+                    </strong>
+                    {copiedField && (
+                      <span style={{ fontSize: '0.8rem', color: '#059669', fontWeight: 600 }}>
+                        Copied {copiedField} to clipboard!
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Filled data from browser session */}
+                  {item.filledData && Object.keys(item.filledData).length > 0 && (
+                    <div style={{ marginBottom: '0.75rem' }}>
+                      <small style={{ fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Auto-filled Fields:</small>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {Object.entries(item.filledData).map(([key, val]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => copyToClipboard(String(val), key)}
+                            style={{
+                              background: '#f1f5f9',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              padding: '0.3rem 0.6rem',
+                              fontSize: '0.8rem',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                            title={`Click to copy "${String(val)}"`}
+                          >
+                            <strong>{key}:</strong> {String(val)} 📋
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Answers with NEEDS_USER_INPUT flagging */}
+                  {item.answers && item.answers.length > 0 && (
+                    <div>
+                      <small style={{ fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Question Answers:</small>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        {item.answers.map((ans) => {
+                          const needsInput = ans.status === 'NEEDS_USER_INPUT';
+                          return (
+                            <div
+                              key={ans.id}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '0.35rem 0.6rem',
+                                background: needsInput ? '#fff1f2' : '#f8fafc',
+                                border: `1px solid ${needsInput ? '#fca5a5' : '#e2e8f0'}`,
+                                borderRadius: '4px',
+                                fontSize: '0.85rem',
+                              }}
+                            >
+                              <span>
+                                <strong>{ans.question}:</strong>{' '}
+                                {needsInput ? (
+                                  <span style={{ color: '#b91c1c', fontWeight: 600 }}>
+                                    ⚠️ Needs your input (agent does not know this fact)
+                                  </span>
+                                ) : (
+                                  <span>{ans.answer || '—'}</span>
+                                )}
+                              </span>
+                              {!needsInput && ans.answer && (
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(ans.answer, ans.question)}
+                                  style={{ background: '#e2e8f0', border: 'none', borderRadius: '4px', padding: '0.2rem 0.45rem', fontSize: '0.75rem', cursor: 'pointer' }}
+                                >
+                                  Copy
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Two distinct actions: Mark as submitted vs Retry */}
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-success"
+                    disabled={isBusy}
+                    onClick={() => markSubmitted(item)}
+                    style={{ fontWeight: 700, padding: '0.55rem 1.15rem' }}
+                  >
+                    ✓ I finished it manually — mark as submitted
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => retryApp(item)}
+                    style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '0.55rem 1.15rem', borderRadius: '6px', fontWeight: 600 }}
+                  >
+                    {isBusy ? 'Retrying…' : '↻ Retry automated fill'}
+                  </button>
+                </div>
               </div>
             )}
 

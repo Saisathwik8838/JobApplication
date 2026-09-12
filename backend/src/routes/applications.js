@@ -9,6 +9,11 @@ const actorSchema = z.object({
   actor: z.string().min(1).max(100).default('local-user'),
   note: z.string().max(1000).optional(),
 });
+const markSubmittedSchema = z.object({
+  actor: z.string().min(1).max(100).default('user-manual'),
+  note: z.string().max(1000).optional(),
+  submissionUrl: z.string().url().or(z.literal('')).optional(),
+});
 
 /** @param {import('../app.js').AppDependencies} dependencies */
 export function applicationsRouter({ prisma, queues, profile }) {
@@ -302,6 +307,60 @@ export function applicationsRouter({ prisma, queues, profile }) {
       next(error);
     }
   });
+
+  // Mark application as submitted manually by the user
+  router.post(
+    '/:id/mark-submitted',
+    validate(idParams, 'params'),
+    validate(markSubmittedSchema),
+    async (request, response, next) => {
+      try {
+        const application = await prisma.application.findFirst({
+          where: { id: request.params.id, userId: request.user.id },
+          include: { job: true },
+        });
+        if (!application) {
+          return response.status(404).json({ error: 'APPLICATION_NOT_FOUND' });
+        }
+
+        const note = request.body.note || 'Manually finished and submitted by candidate.';
+        const submissionUrl = request.body.submissionUrl || application.submissionUrl || application.job.url;
+
+        const submitted = await transitionApplication(prisma, application.id, 'SUBMITTED', {
+          eventType: 'MANUALLY_SUBMITTED',
+          message: note,
+          metadata: {
+            actor: request.body.actor,
+            submissionUrl,
+            previousStatus: application.status,
+          },
+        });
+
+        await prisma.application.update({
+          where: { id: application.id },
+          data: {
+            submittedAt: new Date(),
+            submissionUrl,
+            error: null,
+          },
+        });
+
+        await prisma.userApproval.create({
+          data: {
+            applicationId: application.id,
+            userId: request.user.id,
+            approved: true,
+            actor: request.body.actor,
+            note,
+          },
+        });
+
+        response.json(submitted);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
 
   return router;
 }
