@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { Jobs } from '../src/pages/Jobs.jsx';
 import * as client from '../src/api/client.js';
 
@@ -74,7 +75,11 @@ describe('Jobs Page Component Tests', () => {
   it('renders disabled Prepare and Apply buttons with correct tooltips when unanalyzed', async () => {
     client.get.mockResolvedValueOnce(mockJobsData);
 
-    render(<Jobs />);
+    render(
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Alpha Tech')).toBeInTheDocument();
@@ -100,7 +105,11 @@ describe('Jobs Page Component Tests', () => {
   it('renders disabled Prepare and Apply buttons with correct threshold tooltip when score is below threshold', async () => {
     client.get.mockResolvedValueOnce(mockJobsData);
 
-    render(<Jobs />);
+    render(
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Beta Media')).toBeInTheDocument();
@@ -124,7 +133,11 @@ describe('Jobs Page Component Tests', () => {
   it('enables Apply and Prepare buttons when match score is >= threshold', async () => {
     client.get.mockResolvedValueOnce(mockJobsData);
 
-    render(<Jobs />);
+    render(
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Gamma Systems')).toBeInTheDocument();
@@ -154,7 +167,11 @@ describe('Jobs Page Component Tests', () => {
     // mock for reload()
     client.get.mockResolvedValueOnce(mockJobsData);
 
-    render(<Jobs />);
+    render(
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Alpha Tech')).toBeInTheDocument();
@@ -178,7 +195,11 @@ describe('Jobs Page Component Tests', () => {
     });
     client.get.mockResolvedValueOnce(mockJobsData);
 
-    render(<Jobs />);
+    render(
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Gamma Systems')).toBeInTheDocument();
@@ -201,7 +222,11 @@ describe('Jobs Page Component Tests', () => {
     client.get.mockResolvedValueOnce(mockJobsData);
     client.post.mockRejectedValueOnce(new Error('Network error rejecting'));
 
-    render(<Jobs />);
+    render(
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Alpha Tech')).toBeInTheDocument();
@@ -233,7 +258,11 @@ describe('Jobs Page Component Tests', () => {
     });
     client.get.mockResolvedValueOnce(mockJobsData);
 
-    render(<Jobs />);
+    render(
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Gamma Systems')).toBeInTheDocument();
@@ -261,7 +290,11 @@ describe('Jobs Page Component Tests', () => {
     });
     client.get.mockResolvedValueOnce(mockJobsData);
 
-    render(<Jobs />);
+    render(
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Gamma Systems')).toBeInTheDocument();
@@ -320,7 +353,11 @@ describe('Jobs Page Component Tests', () => {
 
     client.get.mockResolvedValueOnce(jobWithRecheck);
 
-    render(<Jobs />);
+    render(
+      <MemoryRouter>
+        <Jobs />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Delta Corp')).toBeInTheDocument();

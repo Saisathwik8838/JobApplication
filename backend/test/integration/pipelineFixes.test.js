@@ -4,6 +4,7 @@ import request from 'supertest';
 import pino from 'pino';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { generateToken } from '../../src/modules/auth/authService.js';
 
 describe('Job Application Pipeline Fixes (Regression Suite)', () => {
   const logger = pino({ enabled: false });
@@ -18,20 +19,20 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
       name: 'Alex Morgan',
       email: 'alex@example.com',
       phone: '+1-555-0199',
-      location: 'Bengaluru',
+      location: 'Remote',
     },
     education: {
-      degree: 'Bachelor of Technology',
+      degree: 'Bachelor of Science',
       branch: 'Computer Science',
       college: 'State University',
-      graduation_year: 2024,
+      graduation_year: 2022,
     },
     experience: {
       years: 5,
-      level: 'Senior',
+      level: 'Mid level',
     },
     skills: {
-      programming: ['JavaScript', 'TypeScript', 'Python'],
+      programming: ['JavaScript', 'TypeScript'],
       backend: ['Node.js', 'Express'],
       cloud: ['AWS'],
       devops: ['Docker'],
@@ -43,7 +44,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     projects: [],
     preferences: {
       roles: ['Backend Engineer', 'Full Stack Engineer'],
-      locations: ['Remote', 'Bengaluru'],
+      locations: ['Remote'],
       remote: true,
       hybrid: true,
       onsite: false,
@@ -63,6 +64,9 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     const approvals = [];
 
     const mockPrisma = {
+      user: {
+        findUnique: async () => ({ id: 'user-test', email: 'alex@example.com' }),
+      },
       job: {
         findUnique: async ({ where }) => {
           const job = jobs.get(where.id);
@@ -81,6 +85,10 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
       },
       jobMatch: {
         findUnique: async () => null,
+        findFirst: async ({ where }) => {
+          const list = matches.get(where.jobId) || [];
+          return list[0] || null;
+        },
         create: async ({ data }) => {
           const list = matches.get(data.jobId) || [];
           list.unshift(data);
@@ -100,14 +108,24 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
           }
           return null;
         },
+        findFirst: async ({ where }) => {
+          if (where.jobId) return applications.get(where.jobId) || null;
+          if (where.id) {
+            for (const app of applications.values()) {
+              if (app.id === where.id) return app;
+            }
+          }
+          return null;
+        },
         upsert: async ({ where, create, update }) => {
-          let app = applications.get(where.jobId);
+          const jId = where.jobId || where.jobId_userId?.jobId;
+          let app = applications.get(jId);
           if (!app) {
             app = { id: `app-${Date.now()}-${Math.random()}`, updatedAt: new Date(), ...create };
           } else {
             Object.assign(app, { updatedAt: new Date(), ...update });
           }
-          applications.set(where.jobId, app);
+          applications.set(jId, app);
           return app;
         },
         update: async ({ where, data }) => {
@@ -121,6 +139,13 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
         },
       },
       candidate: {
+        findUnique: async () => ({
+          id: 'cand-1',
+          userId: 'user-test',
+          profile: mockCandidateProfile,
+          profileVersion: 'v1.0.0',
+          masterResume: 'Master Resume: JavaScript, Node.js, Tech Corp',
+        }),
         upsert: async ({ create }) => ({ id: 'cand-1', ...create }),
       },
       resume: {
@@ -205,16 +230,19 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
         MATCH_THRESHOLD: 75,
         HEADLESS: true,
         REQUIRE_APPROVAL: true,
+        JWT_SECRET: 'test-jwt-secret-fixes',
       },
       sources: [],
     };
 
-    return { app: createApp(deps), jobs, applications, matches, events, approvals, mockProvider };
+    const token = generateToken({ id: 'user-test', email: 'alex@example.com' }, deps.config.JWT_SECRET);
+
+    return { app: createApp(deps), jobs, applications, matches, events, approvals, mockProvider, token };
   }
 
   // Bug 1: Distinct eligibility failure
   it('Fix 1: returns 200 with distinct eligibility failure when job is ineligible', async () => {
-    const { app, jobs } = createMockEnvironment();
+    const { app, jobs, token } = createMockEnvironment();
 
     // Create an ineligible job: requires 10+ years experience, whereas profile has 5 years
     const ineligibleJob = {
@@ -231,7 +259,9 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     };
     jobs.set(ineligibleJob.id, ineligibleJob);
 
-    const response = await request(app).post(`/api/jobs/${ineligibleJob.id}/analyze`);
+    const response = await request(app)
+      .post(`/api/jobs/${ineligibleJob.id}/analyze`)
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.eligible).toBe(false);
@@ -246,7 +276,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
   // Bug 2 & 4: Prepare validation when not analyzed
   it('Fix 2: returns 409 when attempting to prepare an unanalyzed job', async () => {
-    const { app, jobs } = createMockEnvironment();
+    const { app, jobs, token } = createMockEnvironment();
 
     const unanalyzedJob = {
       id: 'job-unanalyzed-1',
@@ -262,7 +292,9 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     };
     jobs.set(unanalyzedJob.id, unanalyzedJob);
 
-    const response = await request(app).post(`/api/jobs/${unanalyzedJob.id}/prepare`);
+    const response = await request(app)
+      .post(`/api/jobs/${unanalyzedJob.id}/prepare`)
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(409);
     expect(response.body.message).toMatch(/Analyze the job before preparation/i);
@@ -270,7 +302,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
   // Bug 2 & 4: Prepare validation when below MATCH_THRESHOLD
   it('Fix 3: returns 422 when job match score is below configured threshold', async () => {
-    const { app, jobs, matches } = createMockEnvironment();
+    const { app, jobs, matches, token } = createMockEnvironment();
 
     const lowScoreJob = {
       id: 'job-low-score-1',
@@ -297,7 +329,9 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
       },
     ]);
 
-    const response = await request(app).post(`/api/jobs/${lowScoreJob.id}/prepare`);
+    const response = await request(app)
+      .post(`/api/jobs/${lowScoreJob.id}/prepare`)
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(422);
     expect(response.body.message).toMatch(/Job does not meet the configured preparation threshold/i);
@@ -305,7 +339,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
   // Bug 4: Re-running prepare on the same job twice advances to AWAITING_APPROVAL without getting stuck
   it('Fix 4: re-running /prepare on the same job twice resets and advances to AWAITING_APPROVAL', async () => {
-    const { app, jobs, matches, applications } = createMockEnvironment();
+    const { app, jobs, matches, applications, token } = createMockEnvironment();
 
     const eligibleJob = {
       id: 'job-eligible-1',
@@ -332,7 +366,10 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     ]);
 
     // 1. First prepare call
-    const firstResponse = await request(app).post(`/api/jobs/${eligibleJob.id}/prepare`).send({ questions: [] });
+    const firstResponse = await request(app)
+      .post(`/api/jobs/${eligibleJob.id}/prepare`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ questions: [] });
 
     expect(firstResponse.status).toBe(201);
     expect(firstResponse.body.application.status).toBe('AWAITING_APPROVAL');
@@ -342,7 +379,10 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     expect(appInDb.status).toBe('AWAITING_APPROVAL');
 
     // 2. Second prepare call on the SAME job (regression test)
-    const secondResponse = await request(app).post(`/api/jobs/${eligibleJob.id}/prepare`).send({ questions: [] });
+    const secondResponse = await request(app)
+      .post(`/api/jobs/${eligibleJob.id}/prepare`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ questions: [] });
 
     expect(secondResponse.status).toBe(201);
     expect(secondResponse.body.application.status).toBe('AWAITING_APPROVAL');
@@ -351,7 +391,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
   // Bug 4b: Re-running prepare on a REJECTED application
   it('Fix 4b: allows re-preparing a previously REJECTED application', async () => {
-    const { app, jobs, matches, applications } = createMockEnvironment();
+    const { app, jobs, matches, applications, token } = createMockEnvironment();
 
     const rejectedJob = {
       id: 'job-rejected-1',
@@ -384,7 +424,10 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
       status: 'REJECTED',
     });
 
-    const response = await request(app).post(`/api/jobs/${rejectedJob.id}/prepare`).send({ questions: [] });
+    const response = await request(app)
+      .post(`/api/jobs/${rejectedJob.id}/prepare`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ questions: [] });
 
     expect(response.status).toBe(201);
     expect(response.body.application.status).toBe('AWAITING_APPROVAL');
@@ -393,7 +436,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
   // Bug 4c: Rejecting prepare on an in-flight or completed submission
   it('Fix 4c: returns 409 when attempting to prepare an already SUBMITTED application', async () => {
-    const { app, jobs, matches, applications } = createMockEnvironment();
+    const { app, jobs, matches, applications, token } = createMockEnvironment();
 
     const submittedJob = {
       id: 'job-submitted-1',
@@ -421,7 +464,9 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
       status: 'SUBMITTED',
     });
 
-    const response = await request(app).post(`/api/jobs/${submittedJob.id}/prepare`);
+    const response = await request(app)
+      .post(`/api/jobs/${submittedJob.id}/prepare`)
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(409);
     expect(response.body.message).toMatch(/Cannot prepare application in SUBMITTED status/i);
@@ -429,7 +474,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
   // Part 2: One-click Apply workflow & Gate 2 approval
   it('Fix 5: executes prepare -> approve (Gate 1) -> confirm-submit (Gate 2) -> reaches SUBMITTED with exactly two approvals', async () => {
-    const { app, jobs, matches, applications, approvals } = createMockEnvironment();
+    const { app, jobs, matches, applications, approvals, token } = createMockEnvironment();
 
     const job = {
       id: 'job-two-gate-1',
@@ -452,15 +497,21 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     ]);
 
     // 1. Prepare application
-    const prepRes = await request(app).post(`/api/jobs/${job.id}/prepare`).send({ questions: [] });
+    const prepRes = await request(app)
+      .post(`/api/jobs/${job.id}/prepare`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ questions: [] });
     expect(prepRes.status).toBe(201);
     expect(prepRes.body.application.status).toBe('AWAITING_APPROVAL');
 
     // 2. Approve Gate 1
-    const approveRes = await request(app).post(`/api/jobs/${job.id}/approve`).send({
-      actor: 'local-user',
-      note: 'Gate 1 approved via one-click Apply',
-    });
+    const approveRes = await request(app)
+      .post(`/api/jobs/${job.id}/approve`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        actor: 'local-user',
+        note: 'Gate 1 approved via one-click Apply',
+      });
     expect(approveRes.status).toBe(200);
     expect(approveRes.body.status).toBe('APPROVED');
     expect(approvals).toHaveLength(1);
@@ -473,10 +524,13 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     storedApp.screenshot = 'base64screenshot';
 
     // 4. Gate 2 Confirm Submit
-    const confirmRes = await request(app).post(`/api/applications/${storedApp.id}/confirm-submit`).send({
-      actor: 'local-user',
-      note: 'Gate 2 approved after review on Jobs page',
-    });
+    const confirmRes = await request(app)
+      .post(`/api/applications/${storedApp.id}/confirm-submit`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        actor: 'local-user',
+        note: 'Gate 2 approved after review on Jobs page',
+      });
     expect(confirmRes.status).toBe(200);
     expect(confirmRes.body.status).toBe('RESUBMIT_APPROVED');
     expect(approvals).toHaveLength(2);
@@ -488,7 +542,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
   });
 
   it('Fix 6: halts flow when preparation results in NEEDS_USER_INPUT and prevents auto-approval', async () => {
-    const { app, jobs, matches, applications, approvals } = createMockEnvironment();
+    const { app, jobs, matches, applications, approvals, token } = createMockEnvironment();
 
     const job = {
       id: 'job-needs-input-1',
@@ -511,19 +565,25 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     ]);
 
     // Send a question that requires truthful user input (not present in profile)
-    const prepRes = await request(app).post(`/api/jobs/${job.id}/prepare`).send({
-      questions: ['What is your secret security clearance code?'],
-    });
+    const prepRes = await request(app)
+      .post(`/api/jobs/${job.id}/prepare`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        questions: ['What is your secret security clearance code?'],
+      });
 
     expect(prepRes.status).toBe(201);
     expect(prepRes.body.application.status).toBe('NEEDS_USER_INPUT');
     expect(applications.get(job.id).status).toBe('NEEDS_USER_INPUT');
 
     // Attempting to approve an application in NEEDS_USER_INPUT must fail (409)
-    const approveRes = await request(app).post(`/api/jobs/${job.id}/approve`).send({
-      actor: 'local-user',
-      note: 'Attempting approval before input provided',
-    });
+    const approveRes = await request(app)
+      .post(`/api/jobs/${job.id}/approve`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        actor: 'local-user',
+        note: 'Attempting approval before input provided',
+      });
 
     expect(approveRes.status).toBe(409);
     expect(approveRes.body.error).toBe('INVALID_STATE_TRANSITION');

@@ -37,7 +37,22 @@ if (!existsSync(masterResumePath)) {
   if (existsSync(fallback)) masterResumePath = fallback;
 }
 
+import { hashPassword } from './modules/auth/authService.js';
+
 const queues = createQueues(connection);
+
+try {
+  const defaultUser = await prisma.user.findUnique({ where: { id: 'default-local-user' } });
+  if (defaultUser && !defaultUser.passwordHash) {
+    const defaultHash = await hashPassword('password123');
+    await prisma.user.update({
+      where: { id: 'default-local-user' },
+      data: { passwordHash: defaultHash, name: 'Cheera Sai Sathwik' },
+    });
+  }
+} catch (err) {
+  logger.warn({ err }, 'Could not ensure default user password');
+}
 
 await scheduleDiscovery(queues);
 

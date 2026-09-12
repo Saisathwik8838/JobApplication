@@ -5,6 +5,8 @@ import pinoHttp from 'pino-http';
 import { errorHandler } from './middleware/errors.js';
 import { notFound } from './middleware/notFound.js';
 
+import { authRouter } from './routes/auth.js';
+import { authMiddleware } from './middleware/auth.js';
 import { jobsRouter } from './routes/jobs.js';
 import { applicationsRouter } from './routes/applications.js';
 import { dashboardRouter } from './routes/dashboard.js';
@@ -24,7 +26,8 @@ import { automationRunsRouter } from './routes/automationRuns.js';
  *   provider: import('./modules/ai/types.js').LLMProvider,
  *   logger: import('pino').Logger,
  *   config: any,
- *   sources: any[]
+ *   sources: any[],
+ *   mockGoogleVerify?: (credential: string) => Promise<{ googleId: string, email: string, name?: string }>
  * }} AppDependencies
  */
 
@@ -34,10 +37,14 @@ import { automationRunsRouter } from './routes/automationRuns.js';
 export function createApp(dependencies) {
   const app = express();
 
+  const allowedOrigins = dependencies.config.ALLOWED_ORIGINS
+    ? dependencies.config.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
+    : ['http://localhost:5173'];
+
   app.use(
     cors({
-      origin: dependencies.config.ALLOWED_ORIGINS.split(','),
-      credentials: false,
+      origin: allowedOrigins,
+      credentials: true,
     }),
   );
 
@@ -53,12 +60,15 @@ export function createApp(dependencies) {
     response.json({ status: 'ok' }),
   );
 
-  app.use('/api/jobs', jobsRouter(dependencies));
-  app.use('/api/applications', applicationsRouter(dependencies));
-  app.use('/api/dashboard', dashboardRouter(dependencies));
-  app.use('/api/profile', profileRouter(dependencies));
-  app.use('/api/discovery', discoveryRouter(dependencies));
-  app.use('/api/automation/runs', automationRunsRouter(dependencies));
+  const auth = authMiddleware(dependencies.config.JWT_SECRET);
+
+  app.use('/api/auth', authRouter(dependencies));
+  app.use('/api/jobs', auth, jobsRouter(dependencies));
+  app.use('/api/applications', auth, applicationsRouter(dependencies));
+  app.use('/api/dashboard', auth, dashboardRouter(dependencies));
+  app.use('/api/profile', auth, profileRouter(dependencies));
+  app.use('/api/discovery', auth, discoveryRouter(dependencies));
+  app.use('/api/automation/runs', auth, automationRunsRouter(dependencies));
 
   app.use(notFound);
   app.use(errorHandler);

@@ -177,14 +177,30 @@ new Worker(
       throw new Error('Job no longer exists.');
     }
 
+    let targetProfile = profile;
+    let targetVersion = profileVersion;
+    let targetResume = await readFile(masterResumePath, 'utf8').catch(() => '');
+
+    if (job.data.userId) {
+      const candidate = await prisma.candidate.findUnique({
+        where: { userId: job.data.userId },
+      });
+      if (candidate) {
+        targetProfile = candidate.profile;
+        targetVersion = candidate.profileVersion;
+        targetResume = candidate.masterResume || targetResume;
+      }
+    }
+
     const result = await analyzeJob({
       prisma,
       provider,
-      profile,
-      profileVersion,
-      resumeText: await readFile(masterResumePath, 'utf8'),
+      profile: targetProfile,
+      profileVersion: targetVersion,
+      resumeText: targetResume,
       job: found,
       logger,
+      userId: job.data.userId,
     });
 
     // Gate 0 Notification: High match discovered
@@ -196,7 +212,7 @@ new Worker(
             type: 'HIGH_MATCH',
             subject: `High Match Alert: ${found.title} at ${found.company} (${Math.round(result.matchScore * 100)}%)`,
             text: `Found a strong match for your profile!\n\nRole: ${found.title}\nCompany: ${found.company}\nMatch Score: ${Math.round(result.matchScore * 100)}%\nRecommendation: ${result.recommendation}\n\nExplanation:\n${result.explanation || result.reasoning || 'Strong alignment with your background.'}\n\nReview job and prepare application:\nhttp://localhost:5173/jobs?selected=${found.id}`,
-            to: profile?.candidate?.email || config.NOTIFICATION_TO || 'candidate@example.com',
+            to: targetProfile?.candidate?.email || config.NOTIFICATION_TO || 'candidate@example.com',
             metadata: {
               jobId: found.id,
               jobTitle: found.title,
@@ -232,6 +248,11 @@ new Worker(
       include: {
         job: true,
         answers: true,
+        user: {
+          include: {
+            candidate: true,
+          },
+        },
       },
     });
 
@@ -239,23 +260,32 @@ new Worker(
       return { skipped: true, reason: 'Application not found.' };
     }
 
+    const userProfile = application.user?.candidate?.profile || profile;
+    const userEmail =
+      userProfile?.candidate?.email ||
+      application.user?.email ||
+      config.NOTIFICATION_TO ||
+      'candidate@example.com';
+
     if (mode === 'fill') {
-      if (!['APPROVED', 'FILLED_AWAITING_RECHECK', 'MANUAL_INTERVENTION'].includes(application.status)) {
+      if (!['APPROVED', 'FILLING', 'FILLED_AWAITING_RECHECK', 'MANUAL_INTERVENTION'].includes(application.status)) {
         return {
           skipped: true,
           reason: `Application status ${application.status} is not eligible for filling.`,
         };
       }
 
-      await transitionApplication(
-        prisma,
-        application.id,
-        'FILLING',
-        {
-          eventType: 'AUTOFILL_STARTED',
-          message: 'Auto-fill form started.',
-        },
-      );
+      if (application.status !== 'FILLING') {
+        await transitionApplication(
+          prisma,
+          application.id,
+          'FILLING',
+          {
+            eventType: 'AUTOFILL_STARTED',
+            message: 'Auto-fill form started.',
+          },
+        );
+      }
 
       let sessionObj;
       try {
@@ -298,6 +328,61 @@ new Worker(
 
       const filled = await adapter.fill(session);
 
+      if (filled.status === 'NEEDS_USER_INPUT') {
+        await browserManager.closeSession(application.id);
+
+        const missing = filled.missingFields || [];
+        for (const missingField of missing) {
+          const existing = await prisma.applicationAnswer.findFirst({
+            where: { applicationId: application.id, question: missingField },
+          });
+          if (!existing) {
+            await prisma.applicationAnswer.create({
+              data: {
+                applicationId: application.id,
+                question: missingField,
+                answer: null,
+                classification: 'USER_PROFILE_REQUIRED',
+                status: 'NEEDS_USER_INPUT',
+                confidence: 'low',
+                sourceRefs: [],
+              },
+            });
+          }
+        }
+
+        const paused = await transitionApplication(
+          prisma,
+          application.id,
+          'NEEDS_USER_INPUT',
+          {
+            eventType: 'FIELD_INPUT_REQUIRED',
+            message: filled.reason || 'One or more required fields require truthful candidate input.',
+            metadata: filled,
+          },
+        );
+
+        try {
+          await queues['notification'].add(
+            'input-required',
+            {
+              type: 'NEEDS_USER_INPUT',
+              subject: `Input Required: ${application.job.title} at ${application.job.company}`,
+              text: `A required field in the application requires your input:\n\n${missing.join(', ')}\n\nPlease provide your answer at: http://localhost:5173/jobs?selected=${application.jobId}`,
+              to: userEmail,
+              applicationId: application.id,
+              jobTitle: application.job.title,
+              company: application.job.company,
+            },
+            { jobId: `input-req-${application.id}-${Date.now()}` },
+          );
+        } catch (err) {
+          logger.warn({ error: err.message }, 'Failed to enqueue input-required notification');
+        }
+
+        return paused;
+      }
+
       if (filled.status !== 'READY_FOR_REVIEW') {
         await browserManager.closeSession(application.id);
         return transitionApplication(
@@ -331,55 +416,132 @@ new Worker(
         },
       });
 
-      // Pause automation at Gate 2: FILLED_AWAITING_RECHECK (do NOT submit)
-      const updated = await transitionApplication(
+      // Check if any answers remain unresolved
+      const unresolvedCount = await prisma.applicationAnswer.count({
+        where: { applicationId: application.id, status: 'NEEDS_USER_INPUT' },
+      });
+
+      if (unresolvedCount > 0) {
+        await browserManager.closeSession(application.id);
+        return transitionApplication(
+          prisma,
+          application.id,
+          'NEEDS_USER_INPUT',
+          {
+            eventType: 'FIELD_INPUT_REQUIRED',
+            message: 'Application has unresolved required answers.',
+            metadata: { unresolvedCount },
+          },
+        );
+      }
+
+      // All required fields are confirmed and truthful! Auto-submit directly (no second click required)
+      const submitting = await transitionApplication(
         prisma,
         application.id,
-        'FILLED_AWAITING_RECHECK',
+        'SUBMITTING',
         {
-          eventType: 'AUTOFILL_COMPLETED',
-          message: 'Application form filled. Paused awaiting user recheck approval.',
-          metadata: {
-            fieldsCount: Object.keys(filledData).length,
-            hasScreenshot: Boolean(screenshotBase64),
-          },
+          eventType: 'SUBMISSION_STARTED',
+          message: 'All fields verified. Approved browser submission started automatically.',
         },
       );
 
-      // Gate 2 Notification
-      try {
-        await queues['notification'].add(
-          'gate2-recheck-approval',
+      // Re-verify filled form values against saved snapshot
+      const verification = await verifyPageFields(page, filledData);
+      if (!verification.verified) {
+        await browserManager.closeSession(application.id);
+        return transitionApplication(
+          prisma,
+          application.id,
+          'MANUAL_INTERVENTION',
           {
-            type: 'GATE2_RECHECK',
-            subject: `Action Required: Recheck Filled Application (${application.job.company})`,
-            text: `Application for ${application.job.title} at ${application.job.company} has been auto-filled.\n\nPlease review the screenshot and filled fields before final submission:\nhttp://localhost:5173/applications`,
-            to: profile?.candidate?.email || config.NOTIFICATION_TO || 'candidate@example.com',
-            applicationId: application.id,
-            jobTitle: application.job.title,
-            company: application.job.company,
-            url: application.job.url,
-            fieldsCount: Object.keys(filledData).length,
-            actionUrl: 'http://localhost:5173/applications',
-            metadata: {
-              applicationId: application.id,
-              jobId: application.jobId,
-              fieldsCount: Object.keys(filledData).length,
-            },
-          },
-          {
-            jobId: `gate2-${application.id}-${Date.now()}`,
+            eventType: 'VERIFICATION_MISMATCH',
+            message: 'Form fields changed and no longer match reviewed snapshot.',
+            metadata: { mismatches: verification.mismatches },
           },
         );
-      } catch (notifyErr) {
-        logger.warn({ error: notifyErr.message }, 'Failed to enqueue gate 2 notification');
       }
 
-      return updated;
+      const submissionResult = await new SubmissionManager({
+        requireApproval: config.REQUIRE_APPROVAL,
+      }).submit({
+        page,
+        job: application.job,
+        application: submitting,
+        answers: application.answers,
+      });
+
+      await browserManager.closeSession(application.id);
+
+      if (submissionResult.status === 'SUBMITTED') {
+        await prisma.application.update({
+          where: { id: application.id },
+          data: {
+            submittedAt: new Date(),
+            submissionUrl: submissionResult.confirmationUrl,
+          },
+        });
+
+        const submitted = await transitionApplication(
+          prisma,
+          application.id,
+          'SUBMITTED',
+          {
+            eventType: 'SUBMITTED',
+            message: 'Submission confirmation captured successfully.',
+            metadata: submissionResult,
+          },
+        );
+
+        // Record post-submission audit approval record
+        await prisma.userApproval.create({
+          data: {
+            applicationId: application.id,
+            userId: application.userId,
+            approved: true,
+            actor: 'system-automated-submit',
+            note: 'Gate 2 post-submission audit record',
+          },
+        });
+
+        // Send post-submission audit notification
+        try {
+          await queues['notification'].add(
+            'gate2-post-submission-audit',
+            {
+              type: 'GATE2_AUDIT',
+              subject: `Submitted: Application to ${application.job.company} (${application.job.title})`,
+              text: `Your application for ${application.job.title} at ${application.job.company} was submitted successfully.\n\nReview what was submitted at: http://localhost:5173/applications`,
+              to: userEmail,
+              applicationId: application.id,
+              jobTitle: application.job.title,
+              company: application.job.company,
+              url: submissionResult.confirmationUrl || application.job.url,
+              actionUrl: 'http://localhost:5173/applications',
+            },
+            { jobId: `gate2-audit-${application.id}-${Date.now()}` },
+          );
+        } catch (notifyErr) {
+          logger.warn({ error: notifyErr.message }, 'Failed to enqueue post-submission audit notification');
+        }
+
+        return submitted;
+      }
+
+      return transitionApplication(
+        prisma,
+        application.id,
+        'MANUAL_INTERVENTION',
+        {
+          eventType: 'AUTOMATION_PAUSED',
+          message: submissionResult.reason || 'Submission failed.',
+          metadata: submissionResult,
+        },
+      );
     }
 
     if (mode === 'submit') {
-      if (application.status !== 'RESUBMIT_APPROVED') {
+      if (!['RESUBMIT_APPROVED', 'APPROVED'].includes(application.status)) {
         return {
           skipped: true,
           reason: `Application status ${application.status} is not approved for final submission.`,

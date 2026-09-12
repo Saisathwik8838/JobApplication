@@ -14,20 +14,20 @@ const actorSchema = z.object({
 export function applicationsRouter({ prisma, queues, profile }) {
   const router = Router();
 
-  router.get('/', async (_request, response, next) => {
+  router.get('/', async (request, response, next) => {
     try {
-      response.json(
-        await prisma.application.findMany({
-          include: {
-            job: true,
-            resumeVersion: true,
-            answers: true,
-            events: { orderBy: { timestamp: 'desc' } },
-            approvals: true,
-          },
-          orderBy: { updatedAt: 'desc' },
-        })
-      );
+      const items = await prisma.application.findMany({
+        where: { userId: request.user.id },
+        include: {
+          job: true,
+          resumeVersion: true,
+          answers: true,
+          events: { orderBy: { timestamp: 'desc' } },
+          approvals: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      response.json(items);
     } catch (error) {
       next(error);
     }
@@ -35,8 +35,8 @@ export function applicationsRouter({ prisma, queues, profile }) {
 
   router.get('/:id', validate(idParams, 'params'), async (request, response, next) => {
     try {
-      const application = await prisma.application.findUnique({
-        where: { id: request.params.id },
+      const application = await prisma.application.findFirst({
+        where: { id: request.params.id, userId: request.user.id },
         include: {
           job: true,
           resumeVersion: true,
@@ -58,6 +58,14 @@ export function applicationsRouter({ prisma, queues, profile }) {
     validate(editAnswerSchema),
     async (request, response, next) => {
       try {
+        const app = await prisma.application.findFirst({
+          where: { id: request.params.id, userId: request.user.id },
+          include: { job: true, approvals: true },
+        });
+        if (!app) {
+          return response.status(404).json({ error: 'APPLICATION_NOT_FOUND' });
+        }
+
         const existing = await prisma.applicationAnswer.findUnique({
           where: { id: request.params.answerId },
         });
@@ -74,12 +82,31 @@ export function applicationsRouter({ prisma, queues, profile }) {
           where: { applicationId: request.params.id, status: 'NEEDS_USER_INPUT' },
         });
 
-        if (remainingNeeded === 0) {
-          const app = await prisma.application.findUnique({
-            where: { id: request.params.id },
-            include: { job: true },
-          });
-          if (app && app.status === 'NEEDS_USER_INPUT') {
+        if (remainingNeeded === 0 && app.status === 'NEEDS_USER_INPUT') {
+          // Check if Gate 1 was already approved
+          const hasGate1Approval = app.approvals.some((a) => a.approved);
+
+          if (hasGate1Approval) {
+            // Resume browser filling automatically!
+            await transitionApplication(prisma, request.params.id, 'FILLING', {
+              eventType: 'ANSWERS_RESOLVED_AUTO_RESUME',
+              message: 'All questions answered truthfully. Resuming form auto-fill.',
+            });
+
+            const jobId = `fill-resumed-${app.id}-${Date.now()}`;
+            if (queues && queues['browser-application']) {
+              await queues['browser-application'].add(
+                'fill-application',
+                {
+                  applicationId: app.id,
+                  mode: 'fill',
+                  idempotencyKey: jobId,
+                },
+                { jobId }
+              );
+            }
+          } else {
+            // Pre-approval stage: advance to AWAITING_APPROVAL
             await transitionApplication(prisma, request.params.id, 'APPLICATION_PREPARED', {
               eventType: 'ANSWERS_RESOLVED',
               message: 'All questions have been answered truthfully.',
@@ -114,15 +141,15 @@ export function applicationsRouter({ prisma, queues, profile }) {
     }
   );
 
-  // Gate 2: Confirm Submission after human recheck
+  // Gate 2: Confirm Submission after human recheck (for legacy or explicit confirm)
   router.post(
     '/:id/confirm-submit',
     validate(idParams, 'params'),
     validate(actorSchema),
     async (request, response, next) => {
       try {
-        const application = await prisma.application.findUnique({
-          where: { id: request.params.id },
+        const application = await prisma.application.findFirst({
+          where: { id: request.params.id, userId: request.user.id },
           include: { job: true },
         });
         if (!application) {
@@ -149,6 +176,7 @@ export function applicationsRouter({ prisma, queues, profile }) {
         await prisma.userApproval.create({
           data: {
             applicationId: application.id,
+            userId: request.user.id,
             approved: true,
             actor: request.body.actor,
             note: request.body.note ?? 'Second gate: approved after human recheck',
@@ -180,8 +208,8 @@ export function applicationsRouter({ prisma, queues, profile }) {
     validate(actorSchema),
     async (request, response, next) => {
       try {
-        const application = await prisma.application.findUnique({
-          where: { id: request.params.id },
+        const application = await prisma.application.findFirst({
+          where: { id: request.params.id, userId: request.user.id },
         });
         if (!application) {
           return response.status(404).json({ error: 'APPLICATION_NOT_FOUND' });
@@ -196,6 +224,7 @@ export function applicationsRouter({ prisma, queues, profile }) {
         await prisma.userApproval.create({
           data: {
             applicationId: application.id,
+            userId: request.user.id,
             approved: false,
             actor: request.body.actor,
             note: request.body.note,
@@ -215,8 +244,8 @@ export function applicationsRouter({ prisma, queues, profile }) {
     validate(idParams, 'params'),
     async (request, response, next) => {
       try {
-        const application = await prisma.application.findUnique({
-          where: { id: request.params.id },
+        const application = await prisma.application.findFirst({
+          where: { id: request.params.id, userId: request.user.id },
         });
         if (!application) {
           return response.status(404).json({ error: 'APPLICATION_NOT_FOUND' });
@@ -247,7 +276,14 @@ export function applicationsRouter({ prisma, queues, profile }) {
 
   router.post('/:id/retry', validate(idParams, 'params'), async (request, response, next) => {
     try {
-      const approved = await transitionApplication(prisma, request.params.id, 'APPROVED', {
+      const application = await prisma.application.findFirst({
+        where: { id: request.params.id, userId: request.user.id },
+      });
+      if (!application) {
+        return response.status(404).json({ error: 'APPLICATION_NOT_FOUND' });
+      }
+
+      const approved = await transitionApplication(prisma, application.id, 'APPROVED', {
         eventType: 'RETRY_APPROVED',
         message: 'User requested a safe retry.',
       });

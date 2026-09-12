@@ -1,29 +1,116 @@
-import { useEffect, useState } from 'react';
-import { get, post } from '../api/client.js';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { get, post, patch } from '../api/client.js';
 import { Status } from '../components/Status.jsx';
 import { FormRecheckReview } from '../components/FormRecheckReview.jsx';
 
 export function Jobs() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [data, setData] = useState({ items: [], total: 0, matchThreshold: 75 });
   const [generalError, setGeneralError] = useState('');
   const [discovering, setDiscovering] = useState(false);
   const [jobFeedback, setJobFeedback] = useState({});
   const [selectedScreenshot, setSelectedScreenshot] = useState(null);
+  const [inlineAnswers, setInlineAnswers] = useState({});
+  const [savingAnswer, setSavingAnswer] = useState({});
 
-  const reload = async () => {
+  // Filter local state initialized from searchParams
+  const [companyFilter, setCompanyFilter] = useState(searchParams.get('company') || '');
+  const [titleFilter, setTitleFilter] = useState(searchParams.get('titleQuery') || searchParams.get('keyword') || '');
+  const [locationFilter, setLocationFilter] = useState(searchParams.get('location') || '');
+  const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') || '');
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
+  const [minScoreFilter, setMinScoreFilter] = useState(searchParams.get('minMatchScore') || '');
+
+  // Debounce ref
+  const debounceTimerRef = useRef(null);
+
+  // Synchronize filter state changes to URL search params
+  const syncFiltersToParams = useCallback((overrides = {}) => {
+    const filters = {
+      company: companyFilter,
+      titleQuery: titleFilter,
+      location: locationFilter,
+      source: sourceFilter,
+      status: statusFilter,
+      minMatchScore: minScoreFilter,
+      ...overrides,
+    };
+
+    const newParams = new URLSearchParams();
+    Object.entries(filters).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        newParams.set(key, String(val).trim());
+      }
+    });
+    setSearchParams(newParams, { replace: true });
+  }, [companyFilter, titleFilter, locationFilter, sourceFilter, statusFilter, minScoreFilter, setSearchParams]);
+
+  // Build query string from active searchParams or current local state
+  const buildQueryString = useCallback(() => {
+    const params = new URLSearchParams();
+    const company = searchParams.get('company') ?? companyFilter;
+    const title = searchParams.get('titleQuery') ?? searchParams.get('keyword') ?? titleFilter;
+    const loc = searchParams.get('location') ?? locationFilter;
+    const src = searchParams.get('source') ?? sourceFilter;
+    const st = searchParams.get('status') ?? statusFilter;
+    const score = searchParams.get('minMatchScore') ?? minScoreFilter;
+
+    if (company && company.trim()) params.set('company', company.trim());
+    if (title && title.trim()) params.set('titleQuery', title.trim());
+    if (loc && loc.trim()) params.set('location', loc.trim());
+    if (src && src.trim()) params.set('source', src.trim());
+    if (st && st.trim()) params.set('status', st.trim());
+    if (score && score.trim()) params.set('minMatchScore', score.trim());
+
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
+  }, [searchParams, companyFilter, titleFilter, locationFilter, sourceFilter, statusFilter, minScoreFilter]);
+
+  const reload = useCallback(async () => {
     try {
-      const res = await get('/api/jobs');
+      const qs = buildQueryString();
+      const res = await get(`/api/jobs${qs}`);
       setData(res);
     } catch (e) {
       setGeneralError(e.message);
     }
+  }, [buildQueryString]);
+
+  // Trigger search params sync with debounce when user types in filter inputs
+  const handleTextFilterChange = (setter, key, val) => {
+    setter(val);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      syncFiltersToParams({ [key]: val });
+    }, 300);
   };
 
+  const handleSelectFilterChange = (setter, key, val) => {
+    setter(val);
+    syncFiltersToParams({ [key]: val });
+  };
+
+  const handleClearFilters = () => {
+    setCompanyFilter('');
+    setTitleFilter('');
+    setLocationFilter('');
+    setSourceFilter('');
+    setStatusFilter('');
+    setMinScoreFilter('');
+    setSearchParams(new URLSearchParams(), { replace: true });
+  };
+
+  // Reload when searchParams change or polling interval fires
   useEffect(() => {
     reload();
     const timer = window.setInterval(reload, 5000);
-    return () => window.clearInterval(timer);
-  }, []);
+    return () => {
+      window.clearInterval(timer);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, [reload, searchParams]);
 
   const matchThreshold = data.matchThreshold ?? 75;
 
@@ -211,6 +298,35 @@ export function Jobs() {
     }
   };
 
+  const handleSaveInlineAnswer = async (jobId, applicationId, answerId) => {
+    const val = inlineAnswers[answerId];
+    if (!val || !val.trim()) return;
+
+    setSavingAnswer((prev) => ({ ...prev, [answerId]: true }));
+    try {
+      await patch(`/api/applications/${applicationId}/answers/${answerId}`, {
+        answer: val.trim(),
+      });
+      setInlineAnswers((prev) => ({ ...prev, [answerId]: '' }));
+      setJobFeedback((prev) => ({
+        ...prev,
+        [jobId]: {
+          ...prev[jobId],
+          needsUserInput: false,
+          success: 'Answer saved! Resuming truthful submission…',
+        },
+      }));
+      await reload();
+    } catch (e) {
+      setJobFeedback((prev) => ({
+        ...prev,
+        [jobId]: { ...prev[jobId], error: e.message },
+      }));
+    } finally {
+      setSavingAnswer((prev) => ({ ...prev, [answerId]: false }));
+    }
+  };
+
   const handleConfirmSubmit = async (jobId, applicationId) => {
     setGeneralError('');
     setJobFeedback((prev) => ({
@@ -312,11 +428,12 @@ export function Jobs() {
 
   return (
     <section>
+      {/* Header section */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
         <div>
           <h2 style={{ margin: 0 }}>Job Postings ({data.total ?? data.items?.length ?? 0})</h2>
           <small style={{ color: '#64748b' }}>
-            Discover real jobs, analyze candidate fit, and prepare truthful applications.
+            Discover real jobs, filter opportunities, analyze candidate fit, and apply with automated truthful submission.
           </small>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -334,6 +451,124 @@ export function Jobs() {
         </div>
       </div>
 
+      {/* Part 4: Jobs Filter Bar */}
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 700, color: '#334155', fontSize: '0.9rem' }}>🔍 Filter &amp; Search Jobs</span>
+          {(companyFilter || titleFilter || locationFilter || sourceFilter || statusFilter || minScoreFilter) && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '0.25rem 0.6rem', fontSize: '0.8rem' }}
+            >
+              Reset Filters ✕
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+          <div>
+            <label htmlFor="filter-company" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.2rem' }}>
+              Company
+            </label>
+            <input
+              id="filter-company"
+              type="text"
+              placeholder="e.g. Acme or Stripe"
+              value={companyFilter}
+              onChange={(e) => handleTextFilterChange(setCompanyFilter, 'company', e.target.value)}
+              style={{ width: '100%', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="filter-title" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.2rem' }}>
+              Title / Keyword
+            </label>
+            <input
+              id="filter-title"
+              type="text"
+              placeholder="e.g. Backend, React"
+              value={titleFilter}
+              onChange={(e) => handleTextFilterChange(setTitleFilter, 'titleQuery', e.target.value)}
+              style={{ width: '100%', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="filter-location" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.2rem' }}>
+              Location
+            </label>
+            <input
+              id="filter-location"
+              type="text"
+              placeholder="e.g. Remote, SF"
+              value={locationFilter}
+              onChange={(e) => handleTextFilterChange(setLocationFilter, 'location', e.target.value)}
+              style={{ width: '100%', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="filter-source" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.2rem' }}>
+              Source
+            </label>
+            <select
+              id="filter-source"
+              value={sourceFilter}
+              onChange={(e) => handleSelectFilterChange(setSourceFilter, 'source', e.target.value)}
+              style={{ width: '100%', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem', background: '#fff' }}
+            >
+              <option value="">All Sources</option>
+              <option value="remotive">Remotive</option>
+              <option value="greenhouse">Greenhouse</option>
+              <option value="lever">Lever</option>
+              <option value="custom">Custom / Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="filter-status" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.2rem' }}>
+              Status
+            </label>
+            <select
+              id="filter-status"
+              value={statusFilter}
+              onChange={(e) => handleSelectFilterChange(setStatusFilter, 'status', e.target.value)}
+              style={{ width: '100%', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem', background: '#fff' }}
+            >
+              <option value="">All Statuses</option>
+              <option value="DISCOVERED">Discovered</option>
+              <option value="MATCHED">Matched</option>
+              <option value="AWAITING_APPROVAL">Awaiting Approval (Gate 1)</option>
+              <option value="APPROVED">Approved</option>
+              <option value="FILLING">Filling</option>
+              <option value="FILLED_AWAITING_RECHECK">Filled Awaiting Recheck</option>
+              <option value="NEEDS_USER_INPUT">Needs User Input</option>
+              <option value="SUBMITTED">Submitted</option>
+              <option value="FAILED">Failed</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="filter-score" style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#64748b', marginBottom: '0.2rem' }}>
+              Min Match Score ({minScoreFilter ? `${minScoreFilter}%` : 'Any'})
+            </label>
+            <input
+              id="filter-score"
+              type="number"
+              min="0"
+              max="100"
+              placeholder="e.g. 75"
+              value={minScoreFilter}
+              onChange={(e) => handleTextFilterChange(setMinScoreFilter, 'minMatchScore', e.target.value)}
+              style={{ width: '100%', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+            />
+          </div>
+        </div>
+      </div>
+
       {generalError && (
         <div role="alert" style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1rem' }}>
           <strong>Error:</strong> {generalError}
@@ -342,7 +577,7 @@ export function Jobs() {
 
       {data.items?.length === 0 ? (
         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '2rem', textAlign: 'center', color: '#64748b' }}>
-          <p style={{ margin: 0 }}>No job postings found. Click <strong>Run discovery</strong> above to ingest postings.</p>
+          <p style={{ margin: 0 }}>No matching job postings found. Click <strong>Run discovery</strong> or adjust filter criteria above.</p>
         </div>
       ) : (
         <div className="table-wrap">
@@ -367,6 +602,7 @@ export function Jobs() {
                 const appStatus = application?.status ?? job.status;
                 const isAwaitingApproval = appStatus === 'AWAITING_APPROVAL';
                 const isFilledRecheck = appStatus === 'FILLED_AWAITING_RECHECK';
+                const isNeedsUserInput = appStatus === 'NEEDS_USER_INPUT' || feedback.needsUserInput;
                 const isManualIntervention = appStatus === 'MANUAL_INTERVENTION' || appStatus === 'FAILED';
                 const isSubmitted = appStatus === 'SUBMITTED';
 
@@ -398,6 +634,8 @@ export function Jobs() {
                   : match.matchScore < matchThreshold
                   ? `Match score (${match.matchScore}%) is below ${matchThreshold}% threshold.`
                   : 'One-click apply: auto-prepares, approves Gate 1, and fills form in browser';
+
+                const pendingAnswers = application?.answers?.filter((a) => a.status === 'NEEDS_USER_INPUT') || [];
 
                 return (
                   <tr key={job.id}>
@@ -432,13 +670,51 @@ export function Jobs() {
                         </div>
                       )}
 
-                      {/* Needs user input alert */}
-                      {(feedback.needsUserInput || appStatus === 'NEEDS_USER_INPUT') && (
-                        <div style={{ marginTop: '0.5rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '0.45rem 0.65rem', color: '#92400e', fontSize: '0.85rem' }}>
-                          <strong>Input Required:</strong> One or more application answers require truthful input.{' '}
-                          <a href="/applications" style={{ color: '#b45309', fontWeight: 700, textDecoration: 'underline' }}>
-                            Go to Applications to provide answers →
-                          </a>
+                      {/* Part 3: Needs user input alert + inline answer forms */}
+                      {isNeedsUserInput && (
+                        <div style={{ marginTop: '0.5rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '0.65rem 0.75rem', color: '#92400e', fontSize: '0.85rem' }}>
+                          <strong style={{ display: 'block', marginBottom: '0.35rem' }}>
+                            ⚠️ Truthful Input Required:
+                          </strong>
+                          <span style={{ fontSize: '0.85rem' }}>
+                            One or more application answers require truthful input before submission can proceed.
+                          </span>
+
+                          {pendingAnswers.length > 0 ? (
+                            <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                              {pendingAnswers.map((ans) => (
+                                <div key={ans.id} style={{ background: '#fff', border: '1px solid #fef08a', borderRadius: '4px', padding: '0.5rem' }}>
+                                  <div style={{ fontWeight: 600, color: '#78350f', fontSize: '0.82rem', marginBottom: '0.25rem' }}>
+                                    {ans.question}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                    <input
+                                      type="text"
+                                      placeholder="Provide truthful answer…"
+                                      value={inlineAnswers[ans.id] ?? ''}
+                                      onChange={(e) => setInlineAnswers((prev) => ({ ...prev, [ans.id]: e.target.value }))}
+                                      style={{ flex: 1, padding: '0.35rem 0.5rem', fontSize: '0.85rem', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+                                    />
+                                    <button
+                                      type="button"
+                                      className="btn-success"
+                                      disabled={savingAnswer[ans.id] || !inlineAnswers[ans.id]?.trim()}
+                                      onClick={() => handleSaveInlineAnswer(job.id, application.id, ans.id)}
+                                      style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }}
+                                    >
+                                      {savingAnswer[ans.id] ? 'Saving…' : 'Save'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: '0.35rem' }}>
+                              <a href="/applications" style={{ color: '#b45309', fontWeight: 700, textDecoration: 'underline' }}>
+                                Go to Applications to provide answers →
+                              </a>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -471,16 +747,33 @@ export function Jobs() {
                         </div>
                       )}
 
-                      {/* Submitted confirmation */}
+                      {/* Part 3: Submitted confirmation + Post-Submission Audit Review */}
                       {isSubmitted && (
                         <div style={{ marginTop: '0.5rem', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', padding: '0.5rem 0.75rem', color: '#065f46', fontSize: '0.85rem' }}>
                           <strong>Application Submitted Successfully!</strong>
                           {application?.submissionUrl && (
-                            <div>
+                            <div style={{ marginTop: '0.2rem' }}>
                               <a href={application.submissionUrl} target="_blank" rel="noreferrer" style={{ color: '#059669', fontWeight: 600, textDecoration: 'underline' }}>
                                 View submission confirmation ↗
                               </a>
                             </div>
+                          )}
+
+                          {/* Post-submission audit preview */}
+                          {application && (application.screenshot || (application.filledData && Object.keys(application.filledData).length > 0)) && (
+                            <details style={{ marginTop: '0.5rem', background: '#fff', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '0.4rem 0.6rem' }}>
+                              <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#15803d', fontSize: '0.82rem' }}>
+                                🔍 View Submitted Form Audit (Screenshot &amp; Values)
+                              </summary>
+                              <div style={{ marginTop: '0.5rem' }}>
+                                <FormRecheckReview
+                                  screenshot={application.screenshot}
+                                  filledData={application.filledData}
+                                  onImageClick={setSelectedScreenshot}
+                                  isSubmitted={true}
+                                />
+                              </div>
+                            </details>
                           )}
                         </div>
                       )}
@@ -509,6 +802,7 @@ export function Jobs() {
                             screenshot={application.screenshot}
                             filledData={application.filledData}
                             onImageClick={setSelectedScreenshot}
+                            isSubmitted={false}
                           />
                         </div>
                       )}

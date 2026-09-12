@@ -2,6 +2,7 @@ import request from 'supertest';
 import pino from 'pino';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
+import { generateToken } from '../../src/modules/auth/authService.js';
 
 describe('GET /api/dashboard Integration Test', () => {
   it('returns counters and topMatches ordered by matchScore descending, excluding REJECTED jobs', async () => {
@@ -123,12 +124,14 @@ describe('GET /api/dashboard Integration Test', () => {
       config: {
         ALLOWED_ORIGINS: 'http://localhost:5173',
         MATCH_THRESHOLD: 75,
+        JWT_SECRET: 'test-jwt-secret-for-dashboard',
       },
       sources: [],
     };
 
+    const token = generateToken({ id: 'user-1', email: 'user@example.com' }, dependencies.config.JWT_SECRET);
     const app = createApp(dependencies);
-    const response = await request(app).get('/api/dashboard');
+    const response = await request(app).get('/api/dashboard').set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
 

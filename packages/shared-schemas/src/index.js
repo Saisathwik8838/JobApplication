@@ -26,5 +26,27 @@ export const jobMatchResultSchema = z.object({
 });
 export const generatedContentSchema = z.object({ text: z.string(), sourceReferences: z.array(z.string()), confidence: z.enum(['high', 'medium', 'low']), status: z.enum(['READY', 'NEEDS_USER_INPUT']) });
 export const jobCreateSchema = z.object({ source: z.string().min(1), sourceJobId: z.string().optional(), company: z.string().min(1), title: z.string().min(1), description: z.string().min(1), location: z.string().nullable().optional(), employmentType: z.string().nullable().optional(), salary: z.string().nullable().optional(), url: z.string().url(), postedAt: z.coerce.date().nullable().optional() });
-export const jobsQuerySchema = z.object({ status: z.string().optional(), page: z.coerce.number().int().positive().default(1), pageSize: z.coerce.number().int().positive().max(100).default(25) });
+export const jobsQuerySchema = z.object({
+  status: z.string().optional(),
+  company: z.string().optional(),
+  titleQuery: z.string().optional(),
+  keyword: z.string().optional(),
+  location: z.string().optional(),
+  source: z.string().optional(),
+  minMatchScore: z.coerce.number().min(0).max(100).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(25),
+});
 export const applicationAnswerSchema = z.object({ question: z.string().min(1), answer: z.string().nullable(), classification: z.enum(['SAFE_AUTO_ANSWER', 'USER_PROFILE_REQUIRED', 'SENSITIVE', 'UNKNOWN']), status: z.enum(['READY', 'NEEDS_USER_INPUT']), confidence: z.enum(['high', 'medium', 'low']) });
+export const signupSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  name: z.string().optional(),
+});
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1, 'Password is required'),
+});
+export const googleAuthSchema = z.object({
+  credential: z.string().min(1, 'Credential is required'),
+});

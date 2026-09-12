@@ -37,6 +37,7 @@ const configSchema = z.object({
   SMTP_USER: optionalString,
   SMTP_PASSWORD: optionalString,
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
+  JWT_SECRET: z.string().default('dev-secret-job-agent-jwt-change-in-production'),
   HEADLESS: booleanFromString.default(false),
   JOB_SOURCES: z.string().default('remotive'),
   RSS_FEED_URLS: optionalString,
@@ -46,7 +47,7 @@ const configSchema = z.object({
 }).superRefine((value, context) => {
   if (value.LLM_PROVIDER === 'openai' && !value.OPENAI_API_KEY) context.addIssue({ code: z.ZodIssueCode.custom, path: ['OPENAI_API_KEY'], message: 'OPENAI_API_KEY is required when LLM_PROVIDER=openai' });
   if (value.LLM_PROVIDER === 'anthropic' && !value.ANTHROPIC_API_KEY) context.addIssue({ code: z.ZodIssueCode.custom, path: ['ANTHROPIC_API_KEY'], message: 'ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic' });
-  if (value.REQUIRE_APPROVAL !== true) context.addIssue({ code: z.ZodIssueCode.custom, path: ['REQUIRE_APPROVAL'], message: 'REQUIRE_APPROVAL must be true. Automatic submissions are prohibited.' });
+  if (value.REQUIRE_APPROVAL !== true) context.addIssue({ code: z.ZodIssueCode.custom, path: ['REQUIRE_APPROVAL'], message: 'REQUIRE_APPROVAL must be true. Gate 1 human approval is required before browser automation starts, and automation may not submit while any required answer is unresolved.' });
 });
 
 /** @param {Record<string, unknown>} [overrides] @returns {z.infer<typeof configSchema>} */

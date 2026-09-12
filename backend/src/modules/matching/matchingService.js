@@ -6,7 +6,7 @@ import { evaluateEligibility } from '../eligibility/eligibilityEngine.js';
 export function matchCacheKey(job, profileVersion) { return createHash('sha256').update(`${job.description}\n${profileVersion}`).digest('hex'); }
 /** @param {{prisma:import('@prisma/client').PrismaClient, provider:import('../ai/types.js').LLMProvider, profile:import('@job-agent/shared-schemas').CandidateProfile, profileVersion:string, resumeText:string, job:any, logger:import('pino').Logger}} dependencies */
 export async function analyzeJob(dependencies) {
-  const { prisma, provider, profile, profileVersion, resumeText, job, logger } = dependencies;
+  const { prisma, provider, profile, profileVersion, resumeText, job, logger, userId } = dependencies;
   const eligibility = evaluateEligibility(profile, job);
   if (!eligibility.eligible) {
     if (prisma && prisma.job && job.id) {
@@ -20,7 +20,22 @@ export async function analyzeJob(dependencies) {
   if (cached) return { eligibility, match: jobMatchResultSchema.parse(cached.result), cached: true };
   const response = await provider.analyzeJob({ profile, resumeText, job });
   const { _meta, ...match } = response; const validated = jobMatchResultSchema.parse(match);
-  await prisma.$transaction([prisma.jobMatch.create({ data: { jobId: job.id, profileVersion, cacheKey, result: validated, provider: _meta.provider, model: _meta.model, promptVersion: _meta.promptVersion, tokenUsage: _meta.usage ?? undefined } }), prisma.job.update({ where: { id: job.id }, data: { status: 'MATCHED' } })]);
+  await prisma.$transaction([
+    prisma.jobMatch.create({
+      data: {
+        jobId: job.id,
+        userId: userId ?? null,
+        profileVersion,
+        cacheKey,
+        result: validated,
+        provider: _meta.provider,
+        model: _meta.model,
+        promptVersion: _meta.promptVersion,
+        tokenUsage: _meta.usage ?? undefined,
+      },
+    }),
+    prisma.job.update({ where: { id: job.id }, data: { status: 'MATCHED' } }),
+  ]);
   logger.info({ jobId: job.id, matchScore: validated.matchScore, provider: _meta.provider }, 'Job matching complete');
   return { eligibility, match: validated, cached: false };
 }

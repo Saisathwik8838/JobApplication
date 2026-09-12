@@ -4,23 +4,35 @@ import { Router } from 'express';
 export function dashboardRouter({ prisma }) {
   const router = Router();
 
-  router.get('/', async (_request, response, next) => {
+  router.get('/', async (request, response, next) => {
     try {
+      const userId = request.user?.id;
       const [jobs, applications, highQualityMatches, candidateJobs] = await Promise.all([
         prisma.job.groupBy({ by: ['status'], _count: true }),
-        prisma.application.groupBy({ by: ['status'], _count: true }),
-        prisma.jobMatch.count({ where: { result: { path: ['matchScore'], gte: 75 } } }),
+        prisma.application.groupBy({
+          by: ['status'],
+          where: userId ? { userId } : {},
+          _count: true,
+        }),
+        prisma.jobMatch.count({
+          where: {
+            ...(userId ? { userId } : {}),
+            result: { path: ['matchScore'], gte: 75 },
+          },
+        }),
         prisma.job.findMany({
           where: {
             status: { not: 'REJECTED' },
-            matches: { some: {} },
+            matches: { some: userId ? { userId } : {} },
           },
           include: {
             matches: {
+              where: userId ? { userId } : {},
               orderBy: { createdAt: 'desc' },
               take: 1,
             },
             applications: {
+              where: userId ? { userId } : {},
               take: 1,
             },
           },

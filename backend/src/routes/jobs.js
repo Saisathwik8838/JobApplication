@@ -7,28 +7,149 @@ import { analyzeJob } from '../modules/matching/matchingService.js';
 import { generateTailoredResume } from '../modules/resume/resumeService.js';
 import { resolveAnswer } from '../modules/applications/answerResolver.js';
 import { transitionApplication } from '../modules/applications/applicationStateMachine.js';
+import { ensureUserCandidate } from '../modules/auth/authService.js';
 
 const idParams = z.object({ id: z.string().min(1) });
 const prepareSchema = z.object({ questions: z.array(z.string().min(1)).max(100).default([]) });
 const actorSchema = z.object({ actor: z.string().min(1).max(100).default('local-user'), note: z.string().max(1000).optional() });
 
+async function getUserProfileAndResume(prisma, userId, defaultProfile, readMasterResume) {
+  let candidate = await prisma.candidate.findUnique({ where: { userId } });
+  if (!candidate && defaultProfile) {
+    const defaultResume = (await readMasterResume?.()) || '';
+    candidate = await ensureUserCandidate(prisma, userId, defaultProfile, defaultResume);
+  }
+  return {
+    candidate,
+    profile: candidate?.profile || defaultProfile,
+    profileVersion: candidate?.profileVersion || 'default',
+    resumeText: candidate?.masterResume || (await readMasterResume?.()) || '',
+  };
+}
+
 /** @param {import('../app.js').AppDependencies} dependencies */
 export function jobsRouter(dependencies) {
-  const router = Router(); const { prisma, profile, profileVersion, masterResumePath, provider, logger, config, queues } = dependencies;
-  router.get('/', validate(jobsQuerySchema, 'query'), async (request, response, next) => { try { const { page, pageSize, status } = request.query; const where = status ? { status } : {}; const [items, total] = await Promise.all([prisma.job.findMany({ where, orderBy: { discoveredAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize, include: { matches: { orderBy: { createdAt: 'desc' }, take: 1 }, applications: true } }), prisma.job.count({ where })]); response.json({ items, total, page, pageSize, matchThreshold: config.MATCH_THRESHOLD }); } catch (error) { next(error); } });
-  router.post('/', validate(jobCreateSchema), async (request, response, next) => { try { const result = await ingestJob(prisma, request.body); response.status(result.created ? 201 : 200).json(result); } catch (error) { next(error); } });
-  router.get('/:id', validate(idParams, 'params'), async (request, response, next) => { try { response.json(await getJobOrThrow(prisma, request.params.id)); } catch (error) { next(error); } });
+  const router = Router();
+  const { prisma, profile: defaultProfile, readMasterResume, masterResumePath, provider, logger, config, queues } = dependencies;
+
+  router.get('/', validate(jobsQuerySchema, 'query'), async (request, response, next) => {
+    try {
+      const {
+        page = 1,
+        pageSize = 25,
+        status,
+        company,
+        titleQuery,
+        keyword,
+        location,
+        source,
+        minMatchScore,
+      } = request.query;
+
+      const where = {};
+      if (status) where.status = status;
+      if (company) where.company = { contains: company, mode: 'insensitive' };
+
+      const titleFilter = titleQuery || keyword;
+      if (titleFilter) where.title = { contains: titleFilter, mode: 'insensitive' };
+      if (location) where.location = { contains: location, mode: 'insensitive' };
+      if (source) where.source = source;
+
+      if (minMatchScore !== undefined && minMatchScore !== null && minMatchScore !== '') {
+        where.matches = {
+          some: {
+            userId: request.user.id,
+            result: { path: ['matchScore'], gte: Number(minMatchScore) },
+          },
+        };
+      }
+
+      const [items, total] = await Promise.all([
+        prisma.job.findMany({
+          where,
+          orderBy: { discoveredAt: 'desc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: {
+            matches: {
+              where: { userId: request.user.id },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+            applications: {
+              where: { userId: request.user.id },
+              take: 1,
+            },
+          },
+        }),
+        prisma.job.count({ where }),
+      ]);
+
+      response.json({
+        items,
+        total,
+        page,
+        pageSize,
+        matchThreshold: config.MATCH_THRESHOLD,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/', validate(jobCreateSchema), async (request, response, next) => {
+    try {
+      const result = await ingestJob(prisma, request.body);
+      response.status(result.created ? 201 : 200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/:id', validate(idParams, 'params'), async (request, response, next) => {
+    try {
+      const job = await prisma.job.findUnique({
+        where: { id: request.params.id },
+        include: {
+          matches: {
+            where: { userId: request.user.id },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+          applications: {
+            where: { userId: request.user.id },
+            take: 1,
+          },
+        },
+      });
+      if (!job) {
+        return response.status(404).json({ error: 'JOB_NOT_FOUND', message: 'Job not found' });
+      }
+      response.json(job);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/:id/analyze', validate(idParams, 'params'), async (request, response, next) => {
     try {
       const job = await getJobOrThrow(prisma, request.params.id);
+      const userProfileData = await getUserProfileAndResume(
+        prisma,
+        request.user.id,
+        defaultProfile,
+        readMasterResume,
+      );
+
       const result = await analyzeJob({
         prisma,
         provider,
-        profile,
-        profileVersion,
-        resumeText: await dependencies.readMasterResume(),
+        profile: userProfileData.profile,
+        profileVersion: userProfileData.profileVersion,
+        resumeText: userProfileData.resumeText,
         job,
         logger,
+        userId: request.user.id,
       });
 
       if (result.eligibility && result.eligibility.eligible === false) {
@@ -52,12 +173,24 @@ export function jobsRouter(dependencies) {
   router.post('/:id/prepare', validate(idParams, 'params'), validate(prepareSchema), async (request, response, next) => {
     try {
       const job = await getJobOrThrow(prisma, request.params.id);
-      const lastMatch = job.matches[0];
+      const userProfileData = await getUserProfileAndResume(
+        prisma,
+        request.user.id,
+        defaultProfile,
+        readMasterResume,
+      );
+
+      const lastMatch = await prisma.jobMatch.findFirst({
+        where: { jobId: job.id, userId: request.user.id },
+        orderBy: { createdAt: 'desc' },
+      });
+
       if (!lastMatch) {
         const error = new Error('Analyze the job before preparation.');
         error.status = 409;
         throw error;
       }
+
       const match = lastMatch.result;
       if (match.matchScore < config.MATCH_THRESHOLD || match.recommendation === 'reject') {
         const error = new Error(
@@ -67,8 +200,8 @@ export function jobsRouter(dependencies) {
         throw error;
       }
 
-      const existingApplication = await prisma.application.findUnique({
-        where: { jobId: job.id },
+      const existingApplication = await prisma.application.findFirst({
+        where: { jobId: job.id, userId: request.user.id },
       });
 
       const allowedPriorStates = [
@@ -94,15 +227,22 @@ export function jobsRouter(dependencies) {
         }
       }
 
-      const generated = await generateTailoredResume({ provider, profile, job, masterResumePath });
-      const candidate = await prisma.candidate.upsert({
-        where: { profileVersion },
-        update: { profile },
-        create: { profileVersion, profile },
+      const generated = await generateTailoredResume({
+        provider,
+        profile: userProfileData.profile,
+        job,
+        masterResumePath: masterResumePath || 'resume.md',
       });
+
+      const candidate = userProfileData.candidate;
       const sourceResume = await prisma.resume.create({
-        data: { candidateId: candidate.id, sourcePath: masterResumePath, contentHash: generated.sourceHash },
+        data: {
+          candidateId: candidate.id,
+          sourcePath: masterResumePath || 'user-profile',
+          contentHash: generated.sourceHash,
+        },
       });
+
       const version = await prisma.resumeVersion.create({
         data: {
           resumeId: sourceResume.id,
@@ -114,12 +254,28 @@ export function jobsRouter(dependencies) {
       });
 
       const application = await prisma.application.upsert({
-        where: { jobId: job.id },
-        update: { resumeVersionId: version.id, status: 'MATCHED' },
-        create: { jobId: job.id, resumeVersionId: version.id, status: 'MATCHED' },
+        where: {
+          jobId_userId: {
+            jobId: job.id,
+            userId: request.user.id,
+          },
+        },
+        update: {
+          resumeVersionId: version.id,
+          status: 'MATCHED',
+        },
+        create: {
+          jobId: job.id,
+          userId: request.user.id,
+          resumeVersionId: version.id,
+          status: 'MATCHED',
+        },
       });
 
-      const answers = request.body.questions.map((question) => resolveAnswer(question, profile));
+      const answers = request.body.questions.map((question) =>
+        resolveAnswer(question, userProfileData.profile)
+      );
+
       if (answers.length) {
         await prisma.applicationAnswer.deleteMany({ where: { applicationId: application.id } });
         await prisma.applicationAnswer.createMany({
@@ -157,7 +313,7 @@ export function jobsRouter(dependencies) {
               title: `Action Required: Application Ready for Approval (${job.company})`,
               subject: `Action Required: Application Ready for Approval (${job.company})`,
               text: `Application materials (tailored resume and answers) are ready for ${job.title} at ${job.company}.\n\nPlease review and approve autofill at: http://localhost:5173/applications`,
-              to: profile?.candidate?.email,
+              to: userProfileData.profile?.candidate?.email,
               metadata: { applicationId: current.id, jobId: job.id },
             },
             { jobId: `notify-approval-${current.id}-${Date.now()}` }
@@ -170,7 +326,82 @@ export function jobsRouter(dependencies) {
       next(error);
     }
   });
-  router.post('/:id/approve', validate(idParams, 'params'), validate(actorSchema), async (request, response, next) => { try { const job = await getJobOrThrow(prisma, request.params.id); const application = job.applications[0]; if (!application) { const error = new Error('Prepare an application before approval.'); error.status = 409; throw error; } const approved = await transitionApplication(prisma, application.id, 'APPROVED', { eventType: 'APPROVED', message: 'Explicit human approval recorded.' }); await prisma.userApproval.create({ data: { applicationId: application.id, approved: true, actor: request.body.actor, note: request.body.note } }); const time = approved.updatedAt?.getTime?.() ?? Date.now(); await queues['browser-application'].add('fill-application', { applicationId: application.id, mode: 'fill', idempotencyKey: `fill-${application.id}-${time}` }, { jobId: `fill-${application.id}-${time}` }); response.json(approved); } catch (error) { next(error); } });
-  router.post('/:id/reject', validate(idParams, 'params'), validate(actorSchema), async (request, response, next) => { try { const job = await getJobOrThrow(prisma, request.params.id); const application = job.applications[0]; if (!application) { await prisma.job.update({ where: { id: job.id }, data: { status: 'REJECTED' } }); return response.status(204).end(); } const rejected = await transitionApplication(prisma, application.id, 'REJECTED', { eventType: 'REJECTED', message: 'User rejected application.' }); await prisma.userApproval.create({ data: { applicationId: application.id, approved: false, actor: request.body.actor, note: request.body.note } }); response.json(rejected); } catch (error) { next(error); } });
+
+  router.post('/:id/approve', validate(idParams, 'params'), validate(actorSchema), async (request, response, next) => {
+    try {
+      const application = await prisma.application.findFirst({
+        where: { jobId: request.params.id, userId: request.user.id },
+      });
+      if (!application) {
+        const error = new Error('Prepare an application before approval.');
+        error.status = 409;
+        throw error;
+      }
+
+      const approved = await transitionApplication(prisma, application.id, 'APPROVED', {
+        eventType: 'APPROVED',
+        message: 'Explicit human approval recorded.',
+      });
+
+      await prisma.userApproval.create({
+        data: {
+          applicationId: application.id,
+          userId: request.user.id,
+          approved: true,
+          actor: request.body.actor,
+          note: request.body.note,
+        },
+      });
+
+      const time = approved.updatedAt?.getTime?.() ?? Date.now();
+      if (queues && queues['browser-application']) {
+        await queues['browser-application'].add(
+          'fill-application',
+          {
+            applicationId: application.id,
+            mode: 'fill',
+            idempotencyKey: `fill-${application.id}-${time}`,
+          },
+          { jobId: `fill-${application.id}-${time}` }
+        );
+      }
+
+      response.json(approved);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/:id/reject', validate(idParams, 'params'), validate(actorSchema), async (request, response, next) => {
+    try {
+      const application = await prisma.application.findFirst({
+        where: { jobId: request.params.id, userId: request.user.id },
+      });
+      if (!application) {
+        await prisma.job.update({ where: { id: request.params.id }, data: { status: 'REJECTED' } });
+        return response.status(204).end();
+      }
+
+      const rejected = await transitionApplication(prisma, application.id, 'REJECTED', {
+        eventType: 'REJECTED',
+        message: 'User rejected application.',
+      });
+
+      await prisma.userApproval.create({
+        data: {
+          applicationId: application.id,
+          userId: request.user.id,
+          approved: false,
+          actor: request.body.actor,
+          note: request.body.note,
+        },
+      });
+
+      response.json(rejected);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   return router;
 }

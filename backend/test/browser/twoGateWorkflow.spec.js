@@ -205,4 +205,90 @@ test.describe('Two-Gate Application Flow (Live Sandbox Greenhouse Form)', () => 
     // Under verification mismatch, submission halts without submitting
     await expect(page.locator('#confirmation')).not.toBeVisible();
   });
+
+  test('One-click apply flow: pauses on missing truthful answer, resumes to SUBMITTED once resolved without second manual click', async ({ page }) => {
+    await page.goto(fixturePath);
+    await expect(page.locator('h1')).toHaveText('Acme Cloud Systems');
+
+    // 1. Initial candidate answers missing a required field ('Years of experience')
+    const incompleteAnswers = [
+      { question: 'First Name', answer: 'Alex', status: 'READY' },
+      { question: 'Last Name', answer: 'Morgan', status: 'READY' },
+      { question: 'Email', answer: 'alex.morgan@example.com', status: 'READY' },
+      { question: 'Phone', answer: '+1-555-0199', status: 'READY' },
+      { question: 'What programming languages do you know?', answer: 'TypeScript, Go, Python', status: 'READY' },
+    ];
+
+    const mockJob = {
+      id: 'job-gh-103',
+      title: 'Senior Distributed Systems Engineer',
+      company: 'Acme Cloud Systems',
+      url: fixturePath,
+    };
+
+    let appState = 'APPROVED'; // Gate 1 was approved via One-Click Apply
+    assertTransition(appState, 'FILLING');
+    appState = 'FILLING';
+
+    const adapter = new GenericApplicationAdapter();
+    const session1 = new ApplicationSession({
+      page,
+      job: mockJob,
+      application: { id: 'app-103', status: appState },
+      answers: incompleteAnswers,
+    });
+
+    // 2. Autofill encounters missing required field and halts
+    const fillResult1 = await adapter.fill(session1);
+    expect(fillResult1.status).toBe('NEEDS_USER_INPUT');
+    expect(fillResult1.missingFields).toContain('Years of experience');
+
+    // State machine transitions to NEEDS_USER_INPUT
+    assertTransition(appState, 'NEEDS_USER_INPUT');
+    appState = 'NEEDS_USER_INPUT';
+
+    // Must NOT have submitted
+    await expect(page.locator('#confirmation')).not.toBeVisible();
+
+    // 3. Truthful answer is provided by candidate
+    const resolvedAnswers = [
+      ...incompleteAnswers,
+      { question: 'Years of experience', answer: '6', status: 'READY' },
+    ];
+
+    // Backend resumes filling: NEEDS_USER_INPUT -> FILLING
+    assertTransition(appState, 'FILLING');
+    appState = 'FILLING';
+
+    const session2 = new ApplicationSession({
+      page,
+      job: mockJob,
+      application: { id: 'app-103', status: appState },
+      answers: resolvedAnswers,
+    });
+
+    const fillResult2 = await adapter.fill(session2);
+    expect(fillResult2.status).toBe('READY_FOR_REVIEW');
+    expect(fillResult2.filledValues['Years of experience']).toBe('6');
+
+    // 4. One-Click Apply flow auto-submits directly to SUBMITTING -> SUBMITTED
+    assertTransition(appState, 'SUBMITTING');
+    appState = 'SUBMITTING';
+
+    const submitResult = await new SubmissionManager({ requireApproval: true }).submit({
+      page,
+      job: mockJob,
+      application: { id: 'app-103', status: appState },
+      answers: resolvedAnswers,
+    });
+
+    expect(submitResult.status).toBe('SUBMITTED');
+    expect(submitResult.confirmationUrl).toContain('#submitted');
+    await expect(page.locator('#confirmation')).toBeVisible();
+
+    assertTransition(appState, 'SUBMITTED');
+    appState = 'SUBMITTED';
+    expect(appState).toBe('SUBMITTED');
+  });
 });
+
