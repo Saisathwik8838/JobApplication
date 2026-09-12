@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { APIJobSource } from '../../src/modules/jobs/sources/apiJobSource.js';
 import { ArbeitnowJobSource } from '../../src/modules/jobs/sources/arbeitnowJobSource.js';
 import { AdzunaJobSource } from '../../src/modules/jobs/sources/adzunaJobSource.js';
-import { createJobSources, isSampleFallbackActive } from '../../src/modules/jobs/sourceFactory.js';
+import { createJobSources } from '../../src/modules/jobs/sourceFactory.js';
 import { analyzeJob } from '../../src/modules/matching/matchingService.js';
 
 describe('Job Sources and India Localization Unit Tests', () => {
@@ -151,7 +151,7 @@ describe('Job Sources and India Localization Unit Tests', () => {
     });
   });
 
-  describe('Job Source Factory & Fallback Warning', () => {
+  describe('Job Source Factory & Configuration Validation', () => {
     it('instantiates Arbeitnow and Adzuna when specified in JOB_SOURCES', () => {
       const sources = createJobSources({
         JOB_SOURCES: 'remotive,arbeitnow,adzuna',
@@ -163,23 +163,14 @@ describe('Job Sources and India Localization Unit Tests', () => {
       expect(sources[0]).toBeInstanceOf(APIJobSource);
       expect(sources[1]).toBeInstanceOf(ArbeitnowJobSource);
       expect(sources[2]).toBeInstanceOf(AdzunaJobSource);
-      expect(isSampleFallbackActive(sources)).toBe(false);
     });
 
-    it('logs a loud warning and flags sample fallback as active when no real sources configured', () => {
-      const mockLogger = {
-        warn: vi.fn(),
-      };
-
-      const sources = createJobSources({
-        JOB_SOURCES: '',
-        logger: mockLogger,
-      });
-
-      expect(sources).toHaveLength(1);
-      expect(sources[0].name).toBe('sample');
-      expect(isSampleFallbackActive(sources)).toBe(true);
-      expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('LOUD WARNING'));
+    it('throws a loud error when no valid real sources are configured', () => {
+      expect(() => {
+        createJobSources({
+          JOB_SOURCES: '',
+        });
+      }).toThrow(/No job sources configured/i);
     });
   });
 

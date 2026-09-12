@@ -109,6 +109,12 @@ describe('GET /api/dashboard Integration Test', () => {
       jobMatch: {
         count: async () => 3,
       },
+      automationRun: {
+        findFirst: async () => ({
+          completedAt: new Date('2026-09-12T12:00:00Z'),
+          stats: { created: 5 },
+        }),
+      },
     };
 
     const dependencies = {
@@ -135,11 +141,13 @@ describe('GET /api/dashboard Integration Test', () => {
 
     expect(response.status).toBe(200);
 
-    // Assert existing counters are present
+    // Assert existing counters and lastDiscovery are present
     expect(response.body).toHaveProperty('jobsDiscovered', 4);
     expect(response.body).toHaveProperty('matching', 3);
     expect(response.body).toHaveProperty('highQualityMatches', 3);
     expect(response.body).toHaveProperty('awaitingApproval', 1);
+    expect(response.body).toHaveProperty('lastDiscovery');
+    expect(response.body.lastDiscovery.stats.created).toBe(5);
 
     // Assert topMatches is present and correctly shaped
     expect(Array.isArray(response.body.topMatches)).toBe(true);

@@ -247,7 +247,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     // Create an ineligible job: requires 10+ years experience, whereas profile has 5 years
     const ineligibleJob = {
       id: 'job-ineligible-1',
-      source: 'sample',
+      source: 'remotive',
       company: 'High Req Corp',
       title: 'Principal Systems Architect',
       description: 'Minimum of 10 years experience required in distributed systems. On-site in Singapore.',
@@ -280,7 +280,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
     const unanalyzedJob = {
       id: 'job-unanalyzed-1',
-      source: 'sample',
+      source: 'remotive',
       company: 'Acme Corp',
       title: 'Backend Engineer',
       description: 'Remote backend engineer role in US.',
@@ -306,7 +306,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
     const lowScoreJob = {
       id: 'job-low-score-1',
-      source: 'sample',
+      source: 'remotive',
       company: 'Low Match Inc',
       title: 'DevOps Specialist',
       description: 'Kubernetes and Terraform expert.',
@@ -343,7 +343,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
     const eligibleJob = {
       id: 'job-eligible-1',
-      source: 'sample',
+      source: 'remotive',
       company: 'Great Co',
       title: 'Full Stack Engineer',
       description: 'Remote full stack engineer with Node.js and React.',
@@ -395,7 +395,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
     const rejectedJob = {
       id: 'job-rejected-1',
-      source: 'sample',
+      source: 'remotive',
       company: 'Alpha Systems',
       title: 'Backend Engineer',
       description: 'Remote Node.js developer.',
@@ -440,7 +440,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
     const submittedJob = {
       id: 'job-submitted-1',
-      source: 'sample',
+      source: 'remotive',
       company: 'Beta Systems',
       title: 'Cloud Architect',
       description: 'Remote Cloud Engineer.',
@@ -478,7 +478,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
     const job = {
       id: 'job-two-gate-1',
-      source: 'sample',
+      source: 'remotive',
       company: 'ScaleTech',
       title: 'Senior Engineer',
       description: 'Distributed systems engineer.',
@@ -546,7 +546,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
     const job = {
       id: 'job-needs-input-1',
-      source: 'sample',
+      source: 'remotive',
       company: 'Sec Corp',
       title: 'Security Engineer',
       description: 'Security engineer.',

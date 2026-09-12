@@ -30,21 +30,27 @@ export function Dashboard() {
 
   return (
     <section>
-      {data.isSampleSourceActive && (
+      {data.lastDiscovery && (
         <div
-          role="alert"
           style={{
-            background: '#fffbeb',
-            border: '1px solid #fde68a',
-            color: '#92400e',
-            padding: '0.85rem 1.25rem',
-            borderRadius: '8px',
-            marginBottom: '1.5rem',
-            fontSize: '0.9rem',
-            lineHeight: 1.5,
+            background: '#f0fdf4',
+            border: '1px solid #bbf7d0',
+            color: '#166534',
+            padding: '0.65rem 1rem',
+            borderRadius: '6px',
+            marginBottom: '1.25rem',
+            fontSize: '0.875rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
           }}
         >
-          <strong>⚠️ Demo Mode Active (Synthetic Jobs):</strong> No live job sources are configured, so the agent is generating synthetic sample jobs. Configure <code>JOB_SOURCES=remotive,arbeitnow</code> (and optional Adzuna keys) in your environment to discover real opportunities.
+          <span>⏱️</span>
+          <span>
+            <strong>Jobs last refreshed:</strong>{' '}
+            {new Date(data.lastDiscovery.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })},{' '}
+            {data.lastDiscovery.stats?.created ?? 0} new jobs found
+          </span>
         </div>
       )}
 

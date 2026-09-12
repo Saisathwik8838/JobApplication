@@ -1,26 +1,17 @@
 import { APIJobSource } from './sources/apiJobSource.js';
 import { ArbeitnowJobSource } from './sources/arbeitnowJobSource.js';
 import { AdzunaJobSource } from './sources/adzunaJobSource.js';
-import { SampleJobSource } from './sources/sampleJobSource.js';
 import { RSSJobSource } from './sources/rssJobSource.js';
 
 /**
- * Checks if the fallback sample source is currently active in the given source list.
- * @param {Array<{ name: string }>} sources
- * @returns {boolean}
- */
-export function isSampleFallbackActive(sources = []) {
-  return sources.some((s) => s.name === 'sample' || s instanceof SampleJobSource);
-}
-
-/**
  * Creates job sources based on system configuration.
+ * Throws a loud startup error if no valid sources are configured.
  * @param {{ JOB_SOURCES?: string, RSS_FEED_URLS?: string, ADZUNA_APP_ID?: string, ADZUNA_APP_KEY?: string, logger?: import('pino').Logger }} config
  * @returns {Array<{ name: string, discover: () => Promise<object[]> }>}
  */
 export function createJobSources(config = {}) {
   const sources = [];
-  const requestedSources = (config.JOB_SOURCES ?? 'remotive')
+  const requestedSources = (config.JOB_SOURCES ?? 'remotive,arbeitnow')
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
@@ -36,8 +27,6 @@ export function createJobSources(config = {}) {
         appKey: config.ADZUNA_APP_KEY,
         logger: config.logger,
       }));
-    } else if (name === 'sample') {
-      sources.push(new SampleJobSource());
     }
   }
 
@@ -48,16 +37,10 @@ export function createJobSources(config = {}) {
     });
   }
 
-  // Fallback to sample job source if no valid sources configured
   if (sources.length === 0) {
-    const warnMsg = '⚠️ LOUD WARNING: No valid job sources configured! Falling back to synthetic SampleJobSource. Discovered jobs will be fake placeholders.';
-    if (config.logger) {
-      config.logger.warn(warnMsg);
-    } else {
-      console.warn(warnMsg);
-    }
-    sources.push(new SampleJobSource());
+    throw new Error('No job sources configured — set JOB_SOURCES and the required API keys before starting discovery');
   }
 
   return sources;
 }
+
