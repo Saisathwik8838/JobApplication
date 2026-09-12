@@ -8,7 +8,13 @@ export function matchCacheKey(job, profileVersion) { return createHash('sha256')
 export async function analyzeJob(dependencies) {
   const { prisma, provider, profile, profileVersion, resumeText, job, logger } = dependencies;
   const eligibility = evaluateEligibility(profile, job);
-  if (!eligibility.eligible) return { eligibility, match: null, cached: false };
+  if (!eligibility.eligible) {
+    if (prisma && prisma.job && job.id) {
+      await prisma.job.update({ where: { id: job.id }, data: { status: 'REJECTED' } }).catch(() => {});
+    }
+    logger.info({ jobId: job.id, hardFailures: eligibility.hardFailures }, 'Job ineligible; marked REJECTED');
+    return { eligibility, match: null, cached: false };
+  }
   const cacheKey = matchCacheKey(job, profileVersion);
   const cached = await prisma.jobMatch.findUnique({ where: { cacheKey } });
   if (cached) return { eligibility, match: jobMatchResultSchema.parse(cached.result), cached: true };
