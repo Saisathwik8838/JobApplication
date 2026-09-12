@@ -49,10 +49,10 @@ export function evaluateEligibility(profile, job) {
 
   // 1. Seniority Check
   const candidateLevel = (profile.experience?.level || '').toLowerCase();
+  const yearsExp = profile.experience?.totalYears ?? profile.experience?.years ?? 0;
   const isEntryLevel =
     /entry|junior|intern/.test(candidateLevel) ||
-    profile.experience?.years === 0 ||
-    profile.experience?.years === undefined;
+    yearsExp === 0;
 
   if (title) {
     const jobTier = extractSeniorityTier(title);
@@ -79,33 +79,40 @@ export function evaluateEligibility(profile, job) {
 
   // 2. Numeric Years of Experience Check
   const years = requiredYears(description);
-  if (years !== null && profile.experience.years < years) {
-    hardFailures.push(`Requires ${years}+ years of experience; profile records ${profile.experience.years}.`);
+  if (years !== null && yearsExp < years) {
+    hardFailures.push(`Requires ${years}+ years of experience; profile records ${yearsExp}.`);
   }
 
   // 3. Degree Requirements
-  if (/\b(master'?s|msc|m\.s\.)\b/i.test(description) && !/master/i.test(profile.education.degree)) {
+  const education = profile.education;
+  const eduList = Array.isArray(education) ? education : (education ? [education] : []);
+  const degreeStr = eduList.map((e) => e?.degree || '').join(' ');
+  const gradYear = eduList.reduce((max, e) => (e?.graduation_year && e.graduation_year > max ? e.graduation_year : max), 0);
+
+  if (/\b(master'?s|msc|m\.s\.)\b/i.test(description) && degreeStr && !/master/i.test(degreeStr)) {
     hardFailures.push('A master’s degree is required.');
   }
   if (
     /\b(bachelor'?s|btech|b\.tech|b\.s\.)\b/i.test(description) &&
-    !/bachelor|btech|b\.tech|b\.s/i.test(profile.education.degree)
+    degreeStr &&
+    !/bachelor|btech|b\.tech|b\.s/i.test(degreeStr)
   ) {
     hardFailures.push('A bachelor’s degree is required.');
   }
 
   // 4. Graduation Year
   const graduation = description.match(/graduat(?:ed|ing)?\s+(?:in|between|by)\s*(20\d{2})/i);
-  if (graduation && profile.education.graduation_year > Number(graduation[1])) {
+  if (graduation && gradYear > 0 && gradYear > Number(graduation[1])) {
     hardFailures.push(`Requires graduation by ${graduation[1]}.`);
   }
 
   // 5. Location
+  const locations = profile.preferences?.locations || [];
   if (
     job.location &&
     !/remote/i.test(job.location) &&
-    profile.preferences.locations.length &&
-    !profile.preferences.locations.some((location) => job.location.toLowerCase().includes(location.toLowerCase()))
+    locations.length &&
+    !locations.some((location) => job.location.toLowerCase().includes(location.toLowerCase()))
   ) {
     hardFailures.push(`Location ${job.location} is outside stated preferences.`);
   }
@@ -116,7 +123,12 @@ export function evaluateEligibility(profile, job) {
   }
 
   // 7. Mandatory Skills
-  const skills = Object.values(profile.skills).flat().map((skill) => skill.toLowerCase());
+  const rawSkills = profile.skills || [];
+  const skillsList = Array.isArray(rawSkills)
+    ? rawSkills
+    : Object.values(rawSkills).flatMap((v) => (Array.isArray(v) ? v : [v]));
+  const skills = skillsList.map((skill) => (typeof skill === 'string' ? skill.toLowerCase() : String(skill)));
+
   for (const requirement of mandatorySkills(description)) {
     const normalized = requirement.toLowerCase();
     if (

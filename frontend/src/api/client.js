@@ -34,7 +34,18 @@ export async function api(path, init = {}) {
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.message ?? body.error ?? `Request failed (${response.status})`);
+    let msg = body.message ?? body.error ?? `Request failed (${response.status})`;
+    if (body.details?.fieldErrors && Object.keys(body.details.fieldErrors).length > 0) {
+      const fieldList = Object.entries(body.details.fieldErrors)
+        .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
+        .join('; ');
+      msg = `${body.message || 'Validation failed'}: ${fieldList}`;
+    }
+    const err = new Error(msg);
+    err.status = response.status;
+    err.error = body.error;
+    err.details = body.details;
+    throw err;
   }
 
   return response.status === 204 ? null : response.json();

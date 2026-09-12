@@ -21,5 +21,32 @@ export async function saveCandidateProfile(profilePath, value) {
 
 /** @param {import('@job-agent/shared-schemas').CandidateProfile} profile @returns {string[]} */
 export function profileFacts(profile) {
-  return [profile.candidate.name, profile.candidate.location, profile.education.degree, profile.education.branch, profile.education.college, ...Object.values(profile.skills).flat(), ...profile.projects.flatMap((project) => [project.name, project.description, ...project.technologies])].filter(Boolean);
+  const identity = profile?.identity || profile?.candidate || {};
+  const education = profile?.education || {};
+  const eduList = Array.isArray(education) ? education : [education];
+  const eduFacts = eduList.flatMap((e) => [e?.degree, e?.branch, e?.college]).filter(Boolean);
+
+  const rawSkills = profile?.skills || [];
+  let skills = [];
+  if (Array.isArray(rawSkills)) {
+    skills = rawSkills.filter(Boolean);
+  } else if (typeof rawSkills === 'object' && rawSkills !== null) {
+    skills = Object.values(rawSkills).flatMap((v) => (Array.isArray(v) ? v : [v])).filter(Boolean);
+  }
+
+  const projects = Array.isArray(profile?.projects) ? profile.projects : [];
+  const projectFacts = projects.flatMap((p) => [p.name, p.description, ...(p.technologies || [])]);
+
+  return [
+    identity.name,
+    identity.location,
+    identity.email,
+    identity.phone,
+    identity.portfolioUrl,
+    identity.linkedInUrl,
+    identity.githubUrl,
+    ...eduFacts,
+    ...skills,
+    ...projectFacts,
+  ].filter(Boolean);
 }

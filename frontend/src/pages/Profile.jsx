@@ -5,6 +5,7 @@ export function Profile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [success, setSuccess] = useState('');
 
   const [name, setName] = useState('');
@@ -87,6 +88,7 @@ export function Profile() {
   const handleSave = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
     setSuccess('');
     setSaving(true);
 
@@ -131,6 +133,9 @@ export function Profile() {
       setSuccess('Profile and Master Resume updated successfully!');
     } catch (err) {
       setError(err.message || 'Failed to update profile');
+      if (err.details?.fieldErrors) {
+        setFieldErrors(err.details.fieldErrors);
+      }
     } finally {
       setSaving(false);
     }
@@ -156,6 +161,15 @@ export function Profile() {
       {error && (
         <div role="alert" style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1.25rem' }}>
           <strong>Error:</strong> {error}
+          {Object.keys(fieldErrors).length > 0 && (
+            <ul style={{ margin: '0.5rem 0 0 1.25rem', padding: 0 }}>
+              {Object.entries(fieldErrors).map(([field, msgs]) => (
+                <li key={field}>
+                  <strong>{field}:</strong> {Array.isArray(msgs) ? msgs.join(', ') : msgs}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

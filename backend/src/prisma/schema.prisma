@@ -24,7 +24,7 @@ model User {
 model Candidate {
   id             String   @id @default(cuid())
   userId         String?  @unique
-  profileVersion String   @unique
+  profileVersion String
   profile        Json
   masterResume   String?
   createdAt      DateTime @default(now())
