@@ -54,7 +54,7 @@ try {
   logger.warn({ err }, 'Could not ensure default user password');
 }
 
-await scheduleDiscovery(queues);
+await scheduleDiscovery(queues, config);
 
 const provider = getLLMProvider({
   ...config,

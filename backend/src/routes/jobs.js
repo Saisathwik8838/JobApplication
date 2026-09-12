@@ -83,6 +83,10 @@ export function jobsRouter(dependencies) {
           },
         }),
         prisma.job.count({ where }),
+        prisma.automationRun.findFirst({
+          where: { type: 'job-discovery', status: 'COMPLETED' },
+          orderBy: { completedAt: 'desc' },
+        }),
       ]);
 
       response.json({
@@ -91,6 +95,7 @@ export function jobsRouter(dependencies) {
         page,
         pageSize,
         matchThreshold: config.MATCH_THRESHOLD,
+        lastDiscovery: lastRun ? { completedAt: lastRun.completedAt, stats: lastRun.stats } : null,
       });
     } catch (error) {
       next(error);

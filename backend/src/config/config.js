@@ -45,7 +45,9 @@ const configSchema = z.object({
   RSS_FEED_URLS: optionalString,
   NOTIFICATION_CHANNELS: z.string().default('email,webhook'),
   WEBHOOK_NOTIFICATION_URL: optionalString,
-  NOTIFICATION_TO: optionalString
+  NOTIFICATION_TO: optionalString,
+  DISCOVERY_INTERVAL_CRON: z.string().default('*/15 * * * *'),
+  FRONTEND_URL: z.string().default('http://localhost:5173')
 }).superRefine((value, context) => {
   if (value.NODE_ENV !== 'development' && value.JWT_SECRET === 'dev-secret-job-agent-jwt-change-in-production') {
     context.addIssue({

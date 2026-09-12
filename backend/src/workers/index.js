@@ -129,14 +129,14 @@ async function verifyPageFields(page, expectedData) {
 new Worker(
   'job-discovery',
   async (job) => {
-    const run = await prisma.automationRun.upsert({
-      where: {
-        idempotencyKey: job.data.idempotencyKey,
-      },
-      update: {},
-      create: {
+    const runKey = job.data?.idempotencyKey
+      ? `${job.data.idempotencyKey}-${Date.now()}`
+      : `discovery-run-${Date.now()}-${job.id || Math.random().toString(36).slice(2)}`;
+
+    const run = await prisma.automationRun.create({
+      data: {
         type: 'job-discovery',
-        idempotencyKey: job.data.idempotencyKey,
+        idempotencyKey: runKey,
         status: 'RUNNING',
       },
     });

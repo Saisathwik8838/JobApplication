@@ -435,6 +435,29 @@ export function Jobs() {
           <small style={{ color: '#64748b' }}>
             Discover real jobs, filter opportunities, analyze candidate fit, and apply with automated truthful submission.
           </small>
+          {data.lastDiscovery && (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                marginTop: '0.35rem',
+                padding: '0.2rem 0.6rem',
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                borderRadius: '4px',
+                fontSize: '0.78rem',
+                color: '#166534',
+              }}
+            >
+              <span>⏱️</span>
+              <span>
+                <strong>Jobs last refreshed:</strong>{' '}
+                {new Date(data.lastDiscovery.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })},{' '}
+                {data.lastDiscovery.stats?.created ?? 0} new jobs found
+              </span>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button
@@ -521,6 +544,8 @@ export function Jobs() {
             >
               <option value="">All Sources</option>
               <option value="remotive">Remotive</option>
+              <option value="arbeitnow">Arbeitnow</option>
+              <option value="adzuna">Adzuna</option>
               <option value="greenhouse">Greenhouse</option>
               <option value="lever">Lever</option>
               <option value="custom">Custom / Other</option>
