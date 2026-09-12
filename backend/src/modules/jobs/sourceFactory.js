@@ -9,7 +9,7 @@ import { RSSJobSource } from './sources/rssJobSource.js';
  */
 export function createJobSources(config = {}) {
   const sources = [];
-  const requestedSources = (config.JOB_SOURCES ?? 'remotive,sample')
+  const requestedSources = (config.JOB_SOURCES ?? 'remotive')
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);

@@ -38,7 +38,7 @@ const configSchema = z.object({
   SMTP_PASSWORD: optionalString,
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   HEADLESS: booleanFromString.default(false),
-  JOB_SOURCES: z.string().default('remotive,sample'),
+  JOB_SOURCES: z.string().default('remotive'),
   RSS_FEED_URLS: optionalString,
   NOTIFICATION_CHANNELS: z.string().default('email,webhook'),
   WEBHOOK_NOTIFICATION_URL: optionalString,

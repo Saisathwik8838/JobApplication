@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, post, patch } from '../api/client.js';
 import { Status } from '../components/Status.jsx';
+import { FormRecheckReview } from '../components/FormRecheckReview.jsx';
 
 export function Applications() {
   const [items, setItems] = useState([]);
@@ -191,52 +192,11 @@ export function Applications() {
                 <p style={{ margin: '0.5rem 0 1rem 0', color: '#78350f', fontSize: '0.9rem' }}>
                   The application form was auto-filled using your verified candidate data. Please inspect the screenshot and values table below. <strong>No submission will occur without your explicit confirmation.</strong>
                 </p>
-
-                {/* Screenshot view */}
-                {item.screenshot ? (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <strong>Captured Form Screenshot:</strong>
-                    <div style={{ marginTop: '0.4rem' }}>
-                      <img
-                        src={`data:image/png;base64,${item.screenshot}`}
-                        alt="Filled application form screenshot"
-                        className="screenshot-preview"
-                        onClick={() => setSelectedScreenshot(`data:image/png;base64,${item.screenshot}`)}
-                        title="Click to view full size"
-                      />
-                      <small style={{ color: '#64748b' }}>(Click image to view full-resolution screenshot)</small>
-                    </div>
-                  </div>
-                ) : (
-                  <p style={{ fontStyle: 'italic', color: '#64748b' }}>No screenshot captured for this form.</p>
-                )}
-
-                {/* Structured Form Values Table */}
-                {item.filledData && Object.keys(item.filledData).length > 0 ? (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <strong>Form Fields & Filled Values:</strong>
-                    <div className="table-wrap">
-                      <table className="field-map-table">
-                        <thead>
-                          <tr style={{ background: '#f8fafc' }}>
-                            <th style={{ width: '40%' }}>Field Name / Selector</th>
-                            <th>Value Written</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(item.filledData).map(([key, val]) => (
-                            <tr key={key}>
-                              <td>{key}</td>
-                              <td>{String(val)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ) : (
-                  <p style={{ fontStyle: 'italic', color: '#64748b' }}>No structured fields recorded.</p>
-                )}
+                <FormRecheckReview
+                  screenshot={item.screenshot}
+                  filledData={item.filledData}
+                  onImageClick={setSelectedScreenshot}
+                />
 
                 {/* Gate 2 Action Buttons */}
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid #fde68a' }}>

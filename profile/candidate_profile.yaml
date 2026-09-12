@@ -1,38 +1,95 @@
-# SAMPLE PROFILE — replace every value with accurate information before use.
 candidate:
-  name: "Your Name"
-  email: "you@example.com"
-  phone: "+91-0000000000"
-  location: "Bengaluru, India"
+  name: "Cheera Sai Sathwik"
+  email: "saisathwikcheera@gmail.com"
+  phone: "+91 8074916768"
+  location: "Hyderabad"
 education:
   degree: "Bachelor of Technology"
-  branch: "Computer Science"
-  college: "Your College"
-  cgpa: 0
-  graduation_year: 2026
+  branch: "Computer Science & Engineering"
+  college: "Indian Institute of Information Technology Dharwad"
+  cgpa: 8.02
+  graduation_year: 2027
 experience:
   years: 0
   level: "Entry level"
 skills:
-  programming: ["JavaScript"]
-  backend: []
-  cloud: []
-  devops: []
-  databases: []
+  programming:
+    - "C++"
+    - "C"
+    - "Python"
+    - "JavaScript"
+    - "SQL"
+  backend:
+    - "Node.js"
+    - "Express.js"
+    - "REST APIs"
+    - "Microservices"
+    - "Distributed Systems"
+    - "OAuth 2.0"
+  cloud:
+    - "Cloud Computing"
+    - "Microsoft Azure"
+  devops:
+    - "Docker"
+    - "Docker Compose"
+    - "CI/CD"
+  databases:
+    - "PostgreSQL"
+    - "Prisma ORM"
   ai: []
-  frontend: []
-  core_cs: []
-projects: []
+  frontend:
+    - "React"
+  core_cs:
+    - "Data Structures & Algorithms"
+    - "Object-Oriented Programming"
+    - "Database Management Systems"
+    - "Operating Systems"
+    - "Computer Networks"
+    - "Software Engineering"
+    - "Virtualization"
+projects:
+  - name: "MINICODINGPLAT — Distributed Code Execution Platform"
+    description: "Architected and deployed a full-stack coding platform on Microsoft Azure using Docker and Docker Compose for containerized service deployment and orchestration, with an isolated code execution engine."
+    technologies:
+      - "React"
+      - "Node.js"
+      - "Express"
+      - "PostgreSQL"
+      - "Docker"
+      - "Azure"
+  - name: "Attendance Automation System"
+    description: "Built an automated attendance processing system integrating Google Photos and Gmail APIs to process attendance-related metadata and automate notification workflows with OAuth 2.0 authentication."
+    technologies:
+      - "OAuth 2.0"
+      - "Google Cloud Console"
+      - "Google Photos API"
+      - "Gmail API"
 preferences:
-  roles: []
-  locations: []
+  roles: 
+      - "Software Engineer"
+      - "Software Developer"
+      - "Backend Developer"
+      - "Cloud Engineer"
+      - "DevOps Engineer"
+      - "Cloud Engineer"
+      - "DevOps Engineer"
+      - "Backend Developer"
+      - "Cloud Engineer"
+      - "DevOps Engineer"
+  locations: 
+      - "Hyderabad"
+      - "Bangalore"
+      - "Remote - Bangalore"
+      - "Onsite - Bangalore"
+      - "Hybrid - Bangalore"
   remote: true
   hybrid: true
-  onsite: false
-  employment_types: ["full-time"]
+  onsite: true
+  employment_types:
+    - "full-time"
 salary:
-  target: ""
-  minimum: ""
+  target: "15 LPA"
+  minimum: "10 LPA"
 rules:
   minimum_match_score: 75
   auto_prepare: true

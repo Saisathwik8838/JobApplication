@@ -38,19 +38,22 @@ export class OpenAIProvider {
             text: JSON.stringify({
               text: 'Bachelor of Technology in Computer Science. Skilled in JavaScript.\n\nSummary: Software developer with education in Computer Science and experience with JavaScript.',
               sourceReferences: ['Bachelor of Technology', 'Computer Science', 'JavaScript'],
-              status: 'SUPPORTED',
-              confidence: 0.95,
+              status: 'READY',
+              confidence: 'high',
             }),
             usage: { total_tokens: 150 },
           };
         }
         if (prompt.includes('application answer')) {
+          const matchQuestion = prompt.match(/application answer for question:\s*(.+)/i);
           return {
             text: JSON.stringify({
+              question: matchQuestion ? matchQuestion[1].split('\n')[0].trim() : 'Application Question',
               answer: 'Bachelor of Technology in Computer Science with proficiency in JavaScript.',
+              classification: 'SAFE_AUTO_ANSWER',
               sourceReferences: ['Bachelor of Technology', 'JavaScript'],
-              status: 'SUPPORTED',
-              confidence: 0.9,
+              status: 'READY',
+              confidence: 'high',
             }),
             usage: { total_tokens: 50 },
           };

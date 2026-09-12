@@ -60,6 +60,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
     const resumes = new Map();
     const resumeVersions = new Map();
     const events = [];
+    const approvals = [];
 
     const mockPrisma = {
       job: {
@@ -102,9 +103,9 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
         upsert: async ({ where, create, update }) => {
           let app = applications.get(where.jobId);
           if (!app) {
-            app = { id: `app-${Date.now()}-${Math.random()}`, ...create };
+            app = { id: `app-${Date.now()}-${Math.random()}`, updatedAt: new Date(), ...create };
           } else {
-            Object.assign(app, update);
+            Object.assign(app, { updatedAt: new Date(), ...update });
           }
           applications.set(where.jobId, app);
           return app;
@@ -112,7 +113,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
         update: async ({ where, data }) => {
           for (const app of applications.values()) {
             if (app.id === where.id) {
-              Object.assign(app, data);
+              Object.assign(app, { updatedAt: new Date(), ...data });
               return app;
             }
           }
@@ -143,6 +144,12 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
       applicationEvent: {
         create: async ({ data }) => {
           events.push(data);
+          return data;
+        },
+      },
+      userApproval: {
+        create: async ({ data }) => {
+          approvals.push(data);
           return data;
         },
       },
@@ -202,7 +209,7 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
       sources: [],
     };
 
-    return { app: createApp(deps), jobs, applications, matches, events, mockProvider };
+    return { app: createApp(deps), jobs, applications, matches, events, approvals, mockProvider };
   }
 
   // Bug 1: Distinct eligibility failure
@@ -418,5 +425,109 @@ describe('Job Application Pipeline Fixes (Regression Suite)', () => {
 
     expect(response.status).toBe(409);
     expect(response.body.message).toMatch(/Cannot prepare application in SUBMITTED status/i);
+  });
+
+  // Part 2: One-click Apply workflow & Gate 2 approval
+  it('Fix 5: executes prepare -> approve (Gate 1) -> confirm-submit (Gate 2) -> reaches SUBMITTED with exactly two approvals', async () => {
+    const { app, jobs, matches, applications, approvals } = createMockEnvironment();
+
+    const job = {
+      id: 'job-two-gate-1',
+      source: 'sample',
+      company: 'ScaleTech',
+      title: 'Senior Engineer',
+      description: 'Distributed systems engineer.',
+      location: 'Remote',
+      url: 'https://example.com/job-two-gate-1',
+      canonicalUrl: 'https://example.com/job-two-gate-1',
+      contentHash: 'hash-two-gate-1',
+      status: 'MATCHED',
+    };
+    jobs.set(job.id, job);
+
+    matches.set(job.id, [
+      {
+        result: { matchScore: 90, recommendation: 'apply', explanation: 'Strong fit' },
+      },
+    ]);
+
+    // 1. Prepare application
+    const prepRes = await request(app).post(`/api/jobs/${job.id}/prepare`).send({ questions: [] });
+    expect(prepRes.status).toBe(201);
+    expect(prepRes.body.application.status).toBe('AWAITING_APPROVAL');
+
+    // 2. Approve Gate 1
+    const approveRes = await request(app).post(`/api/jobs/${job.id}/approve`).send({
+      actor: 'local-user',
+      note: 'Gate 1 approved via one-click Apply',
+    });
+    expect(approveRes.status).toBe(200);
+    expect(approveRes.body.status).toBe('APPROVED');
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0].note).toBe('Gate 1 approved via one-click Apply');
+
+    // 3. Worker fills form (mocked worker transition to FILLED_AWAITING_RECHECK)
+    const storedApp = applications.get(job.id);
+    storedApp.status = 'FILLED_AWAITING_RECHECK';
+    storedApp.filledData = { 'Full Name': 'Alex Morgan' };
+    storedApp.screenshot = 'base64screenshot';
+
+    // 4. Gate 2 Confirm Submit
+    const confirmRes = await request(app).post(`/api/applications/${storedApp.id}/confirm-submit`).send({
+      actor: 'local-user',
+      note: 'Gate 2 approved after review on Jobs page',
+    });
+    expect(confirmRes.status).toBe(200);
+    expect(confirmRes.body.status).toBe('RESUBMIT_APPROVED');
+    expect(approvals).toHaveLength(2);
+
+    // 5. Worker completes submission (mocked transition to SUBMITTED)
+    storedApp.status = 'SUBMITTED';
+    expect(storedApp.status).toBe('SUBMITTED');
+    expect(approvals).toHaveLength(2);
+  });
+
+  it('Fix 6: halts flow when preparation results in NEEDS_USER_INPUT and prevents auto-approval', async () => {
+    const { app, jobs, matches, applications, approvals } = createMockEnvironment();
+
+    const job = {
+      id: 'job-needs-input-1',
+      source: 'sample',
+      company: 'Sec Corp',
+      title: 'Security Engineer',
+      description: 'Security engineer.',
+      location: 'Remote',
+      url: 'https://example.com/job-sec',
+      canonicalUrl: 'https://example.com/job-sec',
+      contentHash: 'hash-sec',
+      status: 'MATCHED',
+    };
+    jobs.set(job.id, job);
+
+    matches.set(job.id, [
+      {
+        result: { matchScore: 88, recommendation: 'apply', explanation: 'Strong fit' },
+      },
+    ]);
+
+    // Send a question that requires truthful user input (not present in profile)
+    const prepRes = await request(app).post(`/api/jobs/${job.id}/prepare`).send({
+      questions: ['What is your secret security clearance code?'],
+    });
+
+    expect(prepRes.status).toBe(201);
+    expect(prepRes.body.application.status).toBe('NEEDS_USER_INPUT');
+    expect(applications.get(job.id).status).toBe('NEEDS_USER_INPUT');
+
+    // Attempting to approve an application in NEEDS_USER_INPUT must fail (409)
+    const approveRes = await request(app).post(`/api/jobs/${job.id}/approve`).send({
+      actor: 'local-user',
+      note: 'Attempting approval before input provided',
+    });
+
+    expect(approveRes.status).toBe(409);
+    expect(approveRes.body.error).toBe('INVALID_STATE_TRANSITION');
+    // No approval recorded
+    expect(approvals).toHaveLength(0);
   });
 });
