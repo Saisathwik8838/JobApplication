@@ -24,7 +24,7 @@ export class AdzunaJobSource {
   async discover() {
     if (!this.appId || !this.appKey) {
       if (this.logger) {
-        this.logger.info('Adzuna job source skipped: ADZUNA_APP_ID and/or ADZUNA_APP_KEY not configured.');
+        this.logger.warn('ADZUNA_APP_ID and/or ADZUNA_APP_KEY not configured — Adzuna source disabled.');
       }
       return [];
     }

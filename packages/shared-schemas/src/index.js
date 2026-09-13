@@ -63,6 +63,9 @@ export const candidateProfileSchema = z.object({
     email: z.string().email(),
     phone: z.string().optional().default(''),
     location: z.string().optional().default(''),
+    portfolioUrl: z.string().url('Invalid URL').or(z.literal('')).optional().default(''),
+    linkedInUrl: z.string().url('Invalid URL').or(z.literal('')).optional().default(''),
+    githubUrl: z.string().url('Invalid URL').or(z.literal('')).optional().default(''),
   }).optional(),
   experience: candidateExperienceSchema.default({ level: 'mid', totalYears: 0 }),
   preferences: candidatePreferencesSchema.default({ roles: [], locations: [] }),
@@ -89,15 +92,15 @@ export const candidateProfileSchema = z.object({
     });
   }
 }).transform((val) => {
-  const sourceIdentity = val.identity || val.candidate || { name: 'Candidate', email: 'candidate@example.com' };
+  const sourceIdentity = val.identity || val.candidate;
   const identity = {
-    name: sourceIdentity.name || '',
-    email: sourceIdentity.email || '',
-    phone: sourceIdentity.phone || '',
-    location: sourceIdentity.location || '',
-    portfolioUrl: sourceIdentity.portfolioUrl || '',
-    linkedInUrl: sourceIdentity.linkedInUrl || '',
-    githubUrl: sourceIdentity.githubUrl || '',
+    name: sourceIdentity?.name || '',
+    email: sourceIdentity?.email || '',
+    phone: sourceIdentity?.phone || '',
+    location: sourceIdentity?.location || '',
+    portfolioUrl: sourceIdentity?.portfolioUrl || '',
+    linkedInUrl: sourceIdentity?.linkedInUrl || '',
+    githubUrl: sourceIdentity?.githubUrl || '',
   };
 
   let flatSkills = [];
@@ -121,6 +124,9 @@ export const candidateProfileSchema = z.object({
       email: identity.email,
       phone: identity.phone,
       location: identity.location,
+      portfolioUrl: identity.portfolioUrl,
+      linkedInUrl: identity.linkedInUrl,
+      githubUrl: identity.githubUrl,
     },
     experience: {
       level: val.experience.level || 'mid',
@@ -150,6 +156,7 @@ export const jobsQuerySchema = z.object({
   location: z.string().optional(),
   source: z.string().optional(),
   minMatchScore: z.coerce.number().min(0).max(100).optional(),
+  showAll: z.union([z.boolean(), z.string()]).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(25),
 });

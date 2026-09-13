@@ -16,7 +16,19 @@ export async function requestStructured({ request, schema, prompt, logger, event
       const value = schema.parse(parseJsonResponse(response.text));
       logger.info({ event, attempt, usage: response.usage }, 'Structured LLM response accepted');
       return { value, usage: response.usage ?? null };
-    } catch (error) { finalError = error; logger.warn({ event, attempt, error: error.message }, 'Invalid structured LLM response'); }
+    } catch (error) {
+      finalError = error;
+      if (
+        error?.code === 'LLM_AUTH_ERROR' ||
+        error?.code === 'LLM_RATE_LIMIT' ||
+        error?.status === 401 ||
+        error?.status === 429
+      ) {
+        throw error;
+      }
+      logger.warn({ event, attempt, error: error.message }, 'Invalid structured LLM response');
+    }
   }
-  throw new LLMValidationError(`Model returned invalid structured output after three attempts.`, finalError);
+  const rootReason = finalError?.message ? `: ${finalError.message}` : '';
+  throw new LLMValidationError(`Model returned invalid structured output after three attempts${rootReason}`, finalError);
 }

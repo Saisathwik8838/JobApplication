@@ -44,10 +44,16 @@ export function jobsRouter(dependencies) {
         location,
         source,
         minMatchScore,
+        showAll,
       } = request.query;
 
       const where = {};
-      if (status) where.status = status;
+      if (status) {
+        where.status = status;
+      } else if (showAll !== 'true' && showAll !== true) {
+        where.status = { notIn: ['REJECTED', 'MATCH_FAILED'] };
+      }
+
       if (company) where.company = { contains: company, mode: 'insensitive' };
 
       const titleFilter = titleQuery || keyword;
@@ -320,7 +326,7 @@ export function jobsRouter(dependencies) {
               title: `Action Required: Application Ready for Approval (${job.company})`,
               subject: `Action Required: Application Ready for Approval (${job.company})`,
               text: `Application materials (tailored resume and answers) are ready for ${job.title} at ${job.company}.\n\nPlease review and approve autofill at: ${config?.FRONTEND_URL || 'http://localhost:5173'}/applications`,
-              to: userProfileData.profile?.identity?.email || userProfileData.profile?.candidate?.email || request.user?.email || config?.NOTIFICATION_TO || 'candidate@example.com',
+              to: userProfileData.profile?.identity?.email || userProfileData.profile?.candidate?.email || request.user?.email || config?.NOTIFICATION_TO || null,
               metadata: { applicationId: current.id, jobId: job.id },
             },
             { jobId: `notify-approval-${current.id}-${Date.now()}` }

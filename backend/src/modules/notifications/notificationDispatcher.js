@@ -36,7 +36,11 @@ export class NotificationDispatcher {
     const results = {};
 
     if (this.channels.includes('email')) {
-      const recipient = message.to || process.env.NOTIFICATION_TO || 'candidate@example.com';
+      const recipient = message.to || process.env.NOTIFICATION_TO;
+      if (!recipient || recipient === 'candidate@example.com') {
+        this.logger.error('NOTIFICATION_TO is not set — notifications cannot be delivered');
+        throw new Error('NOTIFICATION_TO is not set — notifications cannot be delivered');
+      }
       results.email = await this.emailProvider.send({
         to: recipient,
         subject: message.subject,

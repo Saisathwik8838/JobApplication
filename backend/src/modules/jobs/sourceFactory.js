@@ -51,6 +51,72 @@ function parseCompanySources(rawConfig, logger) {
 }
 
 /**
+ * Inspects configured sources and checks whether required API credentials are present.
+ * @param {object} [config]
+ * @returns {Array<{ name: string, type: string, country?: string, configured: boolean, active: boolean, reason: string|null, companies?: string[] }>}
+ */
+export function getSourceStatus(config = {}) {
+  const requestedSources = (config.JOB_SOURCES ?? 'adzuna,ncs,arbeitnow')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  const statuses = [];
+
+  for (const name of requestedSources) {
+    if (name === 'adzuna') {
+      const configured = Boolean(config.ADZUNA_APP_ID && config.ADZUNA_APP_KEY);
+      statuses.push({
+        name: 'adzuna',
+        type: 'api',
+        country: config.ADZUNA_COUNTRY || 'in',
+        configured,
+        active: configured,
+        reason: configured ? null : 'ADZUNA_APP_ID or ADZUNA_APP_KEY not set',
+      });
+    } else if (name === 'ncs') {
+      const configured = Boolean(config.NCS_API_KEY && config.NCS_RESOURCE_ID);
+      statuses.push({
+        name: 'ncs',
+        type: 'api',
+        country: 'in',
+        configured,
+        active: configured,
+        reason: configured ? null : 'NCS_API_KEY or NCS_RESOURCE_ID not set',
+      });
+    } else if (name === 'arbeitnow') {
+      statuses.push({
+        name: 'arbeitnow',
+        type: 'api',
+        configured: true,
+        active: true,
+        reason: null,
+      });
+    } else if (name === 'remotive' || name === 'api') {
+      statuses.push({
+        name: 'remotive',
+        type: 'api',
+        configured: true,
+        active: true,
+        reason: null,
+      });
+    } else if (name === 'company' || name === 'company-careers' || name === 'careers') {
+      const companyConfigs = parseCompanySources(config.COMPANY_CAREER_SOURCES, config.logger);
+      statuses.push({
+        name: 'company',
+        type: 'company-boards',
+        configured: companyConfigs.length > 0,
+        active: companyConfigs.length > 0,
+        companies: companyConfigs.map((c) => c.companyName || c.name),
+        reason: null,
+      });
+    }
+  }
+
+  return statuses;
+}
+
+/**
  * Creates job sources based on system configuration.
  * Throws a loud startup error if no valid sources are configured.
  * Default sources for India job seekers: adzuna, ncs, arbeitnow
@@ -74,6 +140,15 @@ export function createJobSources(config = {}) {
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
+
+  const statuses = getSourceStatus(config);
+  const activeCount = statuses.filter((s) => s.active).length;
+
+  for (const st of statuses) {
+    if (!st.configured && st.reason && config.logger) {
+      config.logger.warn({ source: st.name }, `${st.reason} — ${st.name} source disabled, only ${activeCount} sources active.`);
+    }
+  }
 
   let companySourcesAdded = false;
 

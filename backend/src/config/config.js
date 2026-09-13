@@ -40,6 +40,7 @@ const configSchema = z.object({
   JWT_SECRET: z.string().default('dev-secret-job-agent-jwt-change-in-production'),
   HEADLESS: booleanFromString.default(false),
   JOB_SOURCES: z.string().default('adzuna,ncs,arbeitnow'),
+  INDIA_ONLY: booleanFromString.default(true),
   ADZUNA_APP_ID: optionalString,
   ADZUNA_APP_KEY: optionalString,
   ADZUNA_COUNTRY: z.string().default('in'),
@@ -60,8 +61,44 @@ const configSchema = z.object({
       message: 'JWT_SECRET must be explicitly configured in non-development environments instead of using the default secret.',
     });
   }
-  if (value.LLM_PROVIDER === 'openai' && !value.OPENAI_API_KEY) context.addIssue({ code: z.ZodIssueCode.custom, path: ['OPENAI_API_KEY'], message: 'OPENAI_API_KEY is required when LLM_PROVIDER=openai' });
-  if (value.LLM_PROVIDER === 'anthropic' && !value.ANTHROPIC_API_KEY) context.addIssue({ code: z.ZodIssueCode.custom, path: ['ANTHROPIC_API_KEY'], message: 'ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic' });
+
+  const isPlaceholderKey = (key) => !key || /^(your-|dummy|placeholder|change-me|<)/i.test(key.trim());
+
+  if (value.LLM_PROVIDER === 'openai') {
+    if (!value.OPENAI_API_KEY || isPlaceholderKey(value.OPENAI_API_KEY)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['OPENAI_API_KEY'],
+        message: "LLM_PROVIDER is set to 'openai' but OPENAI_API_KEY is missing or contains an unconfigured placeholder.",
+      });
+    }
+  }
+
+  if (value.LLM_PROVIDER === 'anthropic') {
+    if (!value.ANTHROPIC_API_KEY || isPlaceholderKey(value.ANTHROPIC_API_KEY)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ANTHROPIC_API_KEY'],
+        message: "LLM_PROVIDER is set to 'anthropic' but ANTHROPIC_API_KEY is missing or contains an unconfigured placeholder.",
+      });
+    }
+  }
+
+  const channels = (value.NOTIFICATION_CHANNELS || '')
+    .split(',')
+    .map((c) => c.trim().toLowerCase());
+  if (
+    value.NODE_ENV === 'production' &&
+    channels.includes('email') &&
+    (!value.NOTIFICATION_TO || value.NOTIFICATION_TO === 'candidate@example.com')
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['NOTIFICATION_TO'],
+      message: 'NOTIFICATION_TO is not set — notifications cannot be delivered. Configure NOTIFICATION_TO with a valid recipient email.',
+    });
+  }
+
   if (value.REQUIRE_APPROVAL !== true) context.addIssue({ code: z.ZodIssueCode.custom, path: ['REQUIRE_APPROVAL'], message: 'REQUIRE_APPROVAL must be true. Gate 1 human approval is required before browser automation starts, and automation may not submit while any required answer is unresolved.' });
 });
 

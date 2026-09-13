@@ -35,12 +35,16 @@ services:
       MATCH_THRESHOLD: ${MATCH_THRESHOLD:-75}
       REQUIRE_APPROVAL: ${REQUIRE_APPROVAL:-true}
       MAX_APPLICATIONS_PER_DAY: ${MAX_APPLICATIONS_PER_DAY:-20}
-      NOTIFICATION_FROM: ${NOTIFICATION_FROM:-job-agent@example.test}
+      NOTIFICATION_FROM: ${NOTIFICATION_FROM:-notifications@jobapplication.local}
       NOTIFICATION_TO: ${NOTIFICATION_TO:-}
       HEADLESS: "true"
-      JOB_SOURCES: ${JOB_SOURCES:-remotive,arbeitnow}
+      JOB_SOURCES: ${JOB_SOURCES:-adzuna,ncs,arbeitnow}
+      INDIA_ONLY: ${INDIA_ONLY:-true}
       ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
       ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
+      ADZUNA_COUNTRY: ${ADZUNA_COUNTRY:-in}
+      NCS_API_KEY: ${NCS_API_KEY:-}
+      NCS_RESOURCE_ID: ${NCS_RESOURCE_ID:-}
       DISCOVERY_INTERVAL_CRON: ${DISCOVERY_INTERVAL_CRON:-*/15 * * * *}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     ports: ["3000:3000"]
@@ -67,12 +71,16 @@ services:
       MATCH_THRESHOLD: ${MATCH_THRESHOLD:-75}
       REQUIRE_APPROVAL: ${REQUIRE_APPROVAL:-true}
       MAX_APPLICATIONS_PER_DAY: ${MAX_APPLICATIONS_PER_DAY:-20}
-      NOTIFICATION_FROM: ${NOTIFICATION_FROM:-job-agent@example.test}
+      NOTIFICATION_FROM: ${NOTIFICATION_FROM:-notifications@jobapplication.local}
       NOTIFICATION_TO: ${NOTIFICATION_TO:-}
       HEADLESS: "true"
-      JOB_SOURCES: ${JOB_SOURCES:-remotive,arbeitnow}
+      JOB_SOURCES: ${JOB_SOURCES:-adzuna,ncs,arbeitnow}
+      INDIA_ONLY: ${INDIA_ONLY:-true}
       ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
       ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
+      ADZUNA_COUNTRY: ${ADZUNA_COUNTRY:-in}
+      NCS_API_KEY: ${NCS_API_KEY:-}
+      NCS_RESOURCE_ID: ${NCS_RESOURCE_ID:-}
       DISCOVERY_INTERVAL_CRON: ${DISCOVERY_INTERVAL_CRON:-*/15 * * * *}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     depends_on:

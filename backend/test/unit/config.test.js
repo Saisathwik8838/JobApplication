@@ -11,6 +11,7 @@ describe('Config Validation and Security Guard Tests', () => {
     REQUIRE_APPROVAL: true,
     PROFILE_PATH: 'profile/candidate_profile.yaml',
     NOTIFICATION_FROM: 'job-agent@example.test',
+    NOTIFICATION_TO: 'candidate@realcorp.com',
   };
 
   it('allows default JWT_SECRET in development environment', () => {
@@ -41,5 +42,16 @@ describe('Config Validation and Security Guard Tests', () => {
     });
 
     expect(config.JWT_SECRET).toBe('super-secure-production-secret-987654321');
+  });
+
+  it('fails loudly when email notification is enabled in production without valid NOTIFICATION_TO', () => {
+    expect(() => {
+      loadConfig({
+        ...baseValidOverrides,
+        NODE_ENV: 'production',
+        JWT_SECRET: 'super-secure-production-secret-987654321',
+        NOTIFICATION_TO: '',
+      });
+    }).toThrow(/NOTIFICATION_TO is not set/i);
   });
 });

@@ -42,19 +42,41 @@ import { hashPassword } from './modules/auth/authService.js';
 const queues = createQueues(connection);
 
 try {
-  const defaultUser = await prisma.user.findUnique({ where: { id: 'default-local-user' } });
-  if (defaultUser && !defaultUser.passwordHash) {
-    const defaultHash = await hashPassword('password123');
-    await prisma.user.update({
-      where: { id: 'default-local-user' },
-      data: { passwordHash: defaultHash, name: 'Cheera Sai Sathwik' },
-    });
-  }
+  const defaultHash = await hashPassword('password123');
+  await prisma.user.upsert({
+    where: { id: 'default-local-user' },
+    update: {},
+    create: {
+      id: 'default-local-user',
+      email: 'saisathwik8838@gmail.com',
+      name: 'Cheera Sai Sathwik',
+      passwordHash: defaultHash,
+    },
+  });
 } catch (err) {
-  logger.warn({ err }, 'Could not ensure default user password');
+  logger.warn({ err }, 'Could not ensure default user exists');
 }
 
 await scheduleDiscovery(queues, config);
+
+import { getSourceStatus } from './modules/jobs/sourceFactory.js';
+const sourceStatuses = getSourceStatus(config);
+const activeSourcesCount = sourceStatuses.filter((s) => s.active).length;
+for (const s of sourceStatuses) {
+  if (!s.configured) {
+    logger.warn(`${s.reason} — ${s.name} source disabled, only ${activeSourcesCount} sources active.`);
+  }
+}
+
+const channels = (config.NOTIFICATION_CHANNELS || '').split(',').map((c) => c.trim().toLowerCase());
+if (channels.includes('email')) {
+  const candidateEmail = profile?.candidate?.email || profile?.identity?.email;
+  const isInvalid = (email) => !email || email.includes('example.com') || email.includes('example.test');
+  if (isInvalid(config.NOTIFICATION_TO) && isInvalid(candidateEmail)) {
+    logger.error('NOTIFICATION_TO is not set — notifications cannot be delivered');
+    throw new Error('NOTIFICATION_TO is not set — notifications cannot be delivered. Configure NOTIFICATION_TO with a valid recipient email.');
+  }
+}
 
 const provider = getLLMProvider({
   ...config,

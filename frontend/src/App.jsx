@@ -42,12 +42,17 @@ const router = createBrowserRouter([
 ]);
 
 export function App() {
-  const googleClientId =
-    import.meta.env.VITE_GOOGLE_CLIENT_ID || 'dummy-google-client-id.apps.googleusercontent.com';
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
-  return (
-    <GoogleOAuthProvider clientId={googleClientId}>
-      <RouterProvider router={router} />
-    </GoogleOAuthProvider>
-  );
+  const content = <RouterProvider router={router} />;
+
+  if (googleClientId) {
+    return (
+      <GoogleOAuthProvider clientId={googleClientId}>
+        {content}
+      </GoogleOAuthProvider>
+    );
+  }
+
+  return content;
 }

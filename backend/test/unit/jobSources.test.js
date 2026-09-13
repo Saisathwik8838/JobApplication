@@ -17,15 +17,15 @@ describe('Job Sources and India Localization Unit Tests', () => {
     globalThis.fetch = originalFetch;
   });
 
-  describe('APIJobSource (Remotive India/Worldwide filtering)', () => {
-    it('filters out location-restricted jobs and keeps India or Worldwide jobs', async () => {
+  describe('APIJobSource (Remotive India-only filtering)', () => {
+    it('filters out location-restricted and generic worldwide jobs, keeping only India-relevant jobs', async () => {
       const mockRemotiveResponse = {
         jobs: [
           {
             id: 101,
             company_name: 'US Only Corp',
             title: 'Frontend Engineer',
-            description: 'React developer',
+            description: 'React developer. Must be authorized to work in the US.',
             candidate_required_location: 'USA only',
             job_type: 'full_time',
             salary: '$120,000',
@@ -37,7 +37,7 @@ describe('Job Sources and India Localization Unit Tests', () => {
             company_name: 'India Tech Labs',
             title: 'Backend Engineer',
             description: 'Node.js & PostgreSQL',
-            candidate_required_location: 'India',
+            candidate_required_location: 'Bengaluru, India',
             job_type: 'full_time',
             salary: '₹18 LPA',
             url: 'https://remotive.com/job/102',
@@ -47,11 +47,22 @@ describe('Job Sources and India Localization Unit Tests', () => {
             id: 103,
             company_name: 'Global Distributed Ltd',
             title: 'Full Stack Engineer',
-            description: 'TypeScript developer',
+            description: 'TypeScript developer. Worldwide team.',
             candidate_required_location: 'Worldwide',
             job_type: 'full_time',
             salary: '',
             url: 'https://remotive.com/job/103',
+            publication_date: '2026-09-12T10:00:00Z',
+          },
+          {
+            id: 104,
+            company_name: 'Remote India Co',
+            title: 'Full Stack Engineer',
+            description: 'TypeScript developer for our team based in India.',
+            candidate_required_location: 'Remote',
+            job_type: 'full_time',
+            salary: '',
+            url: 'https://remotive.com/job/104',
             publication_date: '2026-09-12T10:00:00Z',
           },
         ],
@@ -66,9 +77,9 @@ describe('Job Sources and India Localization Unit Tests', () => {
       const discovered = await source.discover();
 
       expect(discovered).toHaveLength(2);
-      expect(discovered.map((j) => j.sourceJobId)).toEqual(['102', '103']);
+      expect(discovered.map((j) => j.sourceJobId)).toEqual(['102', '104']);
       expect(discovered[0].company).toBe('India Tech Labs');
-      expect(discovered[1].company).toBe('Global Distributed Ltd');
+      expect(discovered[1].company).toBe('Remote India Co');
     });
   });
 

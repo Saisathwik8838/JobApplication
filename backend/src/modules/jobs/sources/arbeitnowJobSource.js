@@ -1,5 +1,6 @@
 import { fetchWithRetry } from '../httpRetry.js';
 import { normalizeIndianLocation } from '../localization.js';
+import { isIndiaRelevant } from '../locationFilter.js';
 
 /**
  * Arbeitnow public job board API source.
@@ -41,11 +42,6 @@ export class ArbeitnowJobSource {
     const items = Array.isArray(body.data) ? body.data : [];
 
     return items
-      .filter((item) => {
-        // Keep remote jobs or jobs with India/Worldwide relevance
-        const loc = (item.location || '').toLowerCase();
-        return item.remote === true || !loc || loc.includes('india') || loc.includes('remote') || loc.includes('worldwide');
-      })
       .map((item) => {
         let rawLocation = 'Remote';
         if (item.remote && item.location) {
@@ -71,6 +67,7 @@ export class ArbeitnowJobSource {
           url: item.url,
           postedAt: item.created_at ? new Date(item.created_at * 1000) : null,
         };
-      });
+      })
+      .filter((job) => isIndiaRelevant(job, { indiaOnly: true }));
   }
 }

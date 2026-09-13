@@ -16,6 +16,7 @@ import { analyzeJob } from '../modules/matching/matchingService.js';
 import { BrowserManager } from '../modules/browser/browserManager.js';
 import { ApplicationSession } from '../modules/browser/applicationSession.js';
 import { selectAdapter } from '../modules/browser/adapterRegistry.js';
+import { ensureApplicationForm } from '../modules/browser/formFieldDetector.js';
 import { SubmissionManager } from '../modules/browser/submissionManager.js';
 import { transitionApplication } from '../modules/applications/applicationStateMachine.js';
 import { NotificationDispatcher } from '../modules/notifications/notificationDispatcher.js';
@@ -213,7 +214,7 @@ new Worker(
             type: 'HIGH_MATCH',
             subject: `High Match Alert: ${found.title} at ${found.company} (${Math.round(result.matchScore * 100)}%)`,
             text: `Found a strong match for your profile!\n\nRole: ${found.title}\nCompany: ${found.company}\nSource: ${found.source || 'Direct'}\nMatch Score: ${Math.round(result.matchScore * 100)}%\nRecommendation: ${result.recommendation}\n\nExplanation:\n${result.explanation || result.reasoning || 'Strong alignment with your background.'}\n\nReview job and prepare application:\n${config.FRONTEND_URL || 'http://localhost:5173'}/jobs?selected=${found.id}`,
-            to: targetProfile?.identity?.email || targetProfile?.candidate?.email || config.NOTIFICATION_TO || 'candidate@example.com',
+            to: targetProfile?.identity?.email || targetProfile?.candidate?.email || config.NOTIFICATION_TO || null,
             metadata: {
               jobId: found.id,
               jobTitle: found.title,
@@ -269,7 +270,7 @@ new Worker(
       userProfile?.candidate?.email ||
       application.user?.email ||
       config.NOTIFICATION_TO ||
-      'candidate@example.com';
+      null;
 
     let resumePath = null;
     if (application.resumeVersion?.content) {
@@ -320,8 +321,25 @@ new Worker(
         );
       }
 
-      const { page } = sessionObj;
-      const adapter = await selectAdapter(application.job.url, page);
+      let activePage = sessionObj.page;
+      const formCheck = await ensureApplicationForm(activePage, logger);
+      if (!formCheck.isForm) {
+        await browserManager.closeSession(application.id);
+        return transitionApplication(
+          prisma,
+          application.id,
+          'MANUAL_INTERVENTION',
+          {
+            eventType: 'LISTING_PAGE_DETECTED',
+            message: 'landed on a listing page, not an application form',
+          },
+        );
+      }
+      if (formCheck.page && formCheck.page !== activePage) {
+        activePage = formCheck.page;
+      }
+
+      const adapter = await selectAdapter(activePage.url() || application.job.url, activePage);
 
       if (!adapter) {
         await browserManager.closeSession(application.id);
@@ -331,13 +349,13 @@ new Worker(
           'MANUAL_INTERVENTION',
           {
             eventType: 'NO_ADAPTER',
-            message: 'No safe adapter exists for this application.',
+            message: 'landed on a listing page, not an application form',
           },
         );
       }
 
       const session = new ApplicationSession({
-        page,
+        page: activePage,
         job: application.job,
         application,
         answers: application.answers,
@@ -418,7 +436,7 @@ new Worker(
       // Capture screenshot and structured field values
       let screenshotBase64 = null;
       try {
-        const buffer = await page.screenshot({ fullPage: true });
+        const buffer = await activePage.screenshot({ fullPage: true });
         screenshotBase64 = buffer.toString('base64');
       } catch (err) {
         logger.warn({ error: err.message }, 'Failed to capture screenshot');
@@ -465,7 +483,7 @@ new Worker(
       );
 
       // Re-verify filled form values against saved snapshot
-      const verification = await verifyPageFields(page, filledData);
+      const verification = await verifyPageFields(activePage, filledData);
       if (!verification.verified) {
         await browserManager.closeSession(application.id);
         return transitionApplication(
@@ -483,7 +501,7 @@ new Worker(
       const submissionResult = await new SubmissionManager({
         requireApproval: config.REQUIRE_APPROVAL,
       }).submit({
-        page,
+        page: activePage,
         job: application.job,
         application: submitting,
         answers: application.answers,

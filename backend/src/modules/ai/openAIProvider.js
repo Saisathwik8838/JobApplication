@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { jobMatchResultSchema, generatedContentSchema, applicationAnswerSchema } from '@job-agent/shared-schemas';
 import { requestStructured } from './baseProvider.js';
+import { LLMAuthError, LLMRateLimitError } from './errors.js';
 
 const promptVersion = '2026-09-08.1';
 /** @implements {import('./types.js').LLMProvider} */
@@ -13,8 +14,12 @@ export class OpenAIProvider {
       const completion = await this.client.chat.completions.create({ model: this.model, messages: [{ role: 'system', content: 'You are a truthful job-application assistant. Return JSON only.' }, { role: 'user', content: prompt }], response_format: { type: 'json_object' } });
       return { text: completion.choices[0]?.message?.content ?? '', usage: completion.usage };
     } catch (err) {
+      if (err?.status === 401 || err?.message?.toLowerCase().includes('api key') || err?.message?.toLowerCase().includes('unauthorized')) {
+        throw new LLMAuthError(`Invalid OpenAI API key: ${err.message}`, err);
+      }
       if (err?.status === 429 || err?.message?.includes('credits') || err?.message?.includes('quota')) {
-        this.logger?.warn?.({ err: err.message }, 'OpenAI quota reached; using fallback response for development/testing');
+        if (process.env.NODE_ENV !== 'production') {
+          this.logger?.warn?.({ err: err.message }, 'OpenAI quota reached; using fallback response for development/testing');
         if (prompt.includes('Assess fit only after deterministic eligibility')) {
           return {
             text: JSON.stringify({
@@ -58,6 +63,8 @@ export class OpenAIProvider {
             usage: { total_tokens: 50 },
           };
         }
+        }
+        throw new LLMRateLimitError(`OpenAI rate limit or quota exceeded: ${err.message}`, err);
       }
       throw err;
     }
@@ -71,6 +78,12 @@ export class OpenAIProvider {
 }
 
 /** @param {import('./types.js').JobAnalysisInput} input */
-function analysisPrompt(input) { return `PROMPT_VERSION=${promptVersion}\nAssess fit only after deterministic eligibility. Use the candidate facts and resume below. Never invent facts. Return matchScore, technicalMatch, experienceMatch, educationMatch, roleMatch 0-100, skillMatches, missingSkills, strengths, concerns, recommendation (apply|review|reject), explanation.\nCANDIDATE=${JSON.stringify(input.profile)}\nRESUME=${input.resumeText}\nJOB=Title: ${input.job.title || 'N/A'}\nCompany: ${input.job.company || 'N/A'}\nEmployment Type: ${input.job.employmentType ?? 'N/A'}\nDescription: ${input.job.description}`; }
+function analysisPrompt(input) {
+  let prompt = `PROMPT_VERSION=${promptVersion}\nAssess fit only after deterministic eligibility. Use the candidate facts and resume below. Never invent facts. Return matchScore, technicalMatch, experienceMatch, educationMatch, roleMatch 0-100, skillMatches, missingSkills, strengths, concerns, recommendation (apply|review|reject), explanation.\nCANDIDATE=${JSON.stringify(input.profile)}\nRESUME=${input.resumeText}\nJOB=Title: ${input.job.title || 'N/A'}\nCompany: ${input.job.company || 'N/A'}\nEmployment Type: ${input.job.employmentType ?? 'N/A'}\nDescription: ${input.job.description}`;
+  if (input.strictRetry) {
+    prompt += `\n\nCRITICAL: Your previous response was invalid. You MUST return a valid JSON object matching the exact schema with all required fields: matchScore, technicalMatch, experienceMatch, educationMatch, roleMatch (all numbers 0-100), skillMatches, missingSkills, strengths, concerns, recommendation (apply, review, or reject), and explanation.`;
+  }
+  return prompt;
+}
 /** @param {string} objective @param {object} input */
-function generationPrompt(objective, input) { return `PROMPT_VERSION=${promptVersion}\nProduce a ${objective} using only the supplied candidate profile and master resume. If unsupported, return status NEEDS_USER_INPUT, empty text, empty sourceReferences, low confidence. Cite exact source snippets in sourceReferences.\nINPUT=${JSON.stringify(input)}`; }
+function generationPrompt(objective, input) { return `PROMPT_VERSION=${promptVersion}\nProduce a ${objective} using only the supplied candidate profile and master resume. If unsupported, return status NEEDS_USER_INPUT, empty text, empty sourceReferences, low confidence. Cite exact source snippets in sourceReferences. IMPORTANT: Every item in sourceReferences must be copied VERBATIM from the supplied candidate profile or master resume text. Never paraphrase, expand abbreviations, or alter wording (e.g. if the resume mentions 'B.Tech', sourceReferences must contain 'B.Tech', not 'Bachelor of Technology').\nINPUT=${JSON.stringify(input)}`; }

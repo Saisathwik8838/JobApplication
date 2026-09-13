@@ -1,4 +1,4 @@
-import { detectCaptcha, detectFormFields } from '../formFieldDetector.js';
+import { detectCaptcha, detectFormFields, isApplicationForm, ensureApplicationForm } from '../formFieldDetector.js';
 
 export class GenericApplicationAdapter {
   constructor() {
@@ -8,13 +8,26 @@ export class GenericApplicationAdapter {
 
   /** @param {string} _url @param {import('playwright').Page} page */
   async detect(_url, page) {
-    return (await page.locator('form').count()) > 0;
+    return await isApplicationForm(page);
   }
 
   /** @param {import('../applicationSession.js').ApplicationSession} session */
   async fill(session) {
     if (await detectCaptcha(session.page)) {
       return { status: 'MANUAL_INTERVENTION', reason: 'CAPTCHA detected', fieldsFilled: 0, filledValues: {} };
+    }
+
+    const formCheck = await ensureApplicationForm(session.page);
+    if (!formCheck.isForm) {
+      return {
+        status: 'MANUAL_INTERVENTION',
+        reason: 'landed on a listing page, not an application form',
+        fieldsFilled: 0,
+        filledValues: {},
+      };
+    }
+    if (formCheck.page && formCheck.page !== session.page) {
+      session.page = formCheck.page;
     }
 
     const fields = await detectFormFields(session.page);

@@ -41,13 +41,16 @@ export async function verifyGoogleToken(credential, options = {}) {
     return options.mockVerify(credential);
   }
 
-  // Handle mock test token format
+  // Handle mock test token format (permitted strictly during unit/integration tests)
   if (credential.startsWith('mock-google-')) {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error('Mock Google credentials are only permitted in test environments.');
+    }
     const parts = credential.split(':');
     return {
       googleId: parts[1] || 'mock-google-id',
-      email: parts[2] || 'google-user@example.com',
-      name: parts[3] || 'Google User',
+      email: parts[2] || 'test-google-user@test.local',
+      name: parts[3] || 'Google Test User',
     };
   }
 

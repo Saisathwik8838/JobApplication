@@ -1,5 +1,6 @@
 import { fetchWithRetry } from '../httpRetry.js';
 import { normalizeIndianLocation } from '../localization.js';
+import { isIndiaRelevant } from '../locationFilter.js';
 
 /** Public, unauthenticated source. Terms and rate limits must be reviewed before enabling in production. */
 export class APIJobSource {
@@ -30,11 +31,6 @@ export class APIJobSource {
     const body = await response.json();
 
     return (body.jobs ?? [])
-      .filter((job) => {
-        const loc = (job.candidate_required_location || '').toLowerCase().trim();
-        // Keep jobs where candidate location includes India, Worldwide, Anywhere, or is unrestricted
-        return !loc || loc.includes('india') || loc.includes('worldwide') || loc.includes('anywhere');
-      })
       .map((job) => ({
         source: this.name,
         sourceJobId: String(job.id),
@@ -46,6 +42,7 @@ export class APIJobSource {
         salary: job.salary ?? null,
         url: job.url,
         postedAt: job.publication_date ? new Date(job.publication_date) : null,
-      }));
+      }))
+      .filter((job) => isIndiaRelevant(job, { indiaOnly: true }));
   }
 }

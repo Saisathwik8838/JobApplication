@@ -94,19 +94,23 @@ export function Login() {
         </button>
       </form>
 
-      <div style={{ display: 'flex', alignItems: 'center', margin: '1.5rem 0', color: '#94a3b8' }}>
-        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }}></div>
-        <span style={{ padding: '0 0.75rem', fontSize: '0.8rem', textTransform: 'uppercase' }}>or</span>
-        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }}></div>
-      </div>
+      {import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', margin: '1.5rem 0', color: '#94a3b8' }}>
+            <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }}></div>
+            <span style={{ padding: '0 0.75rem', fontSize: '0.8rem', textTransform: 'uppercase' }}>or</span>
+            <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }}></div>
+          </div>
 
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
-        <GoogleLogin
-          onSuccess={handleGoogleSuccess}
-          onError={() => setError('Google sign-in was unsuccesful. Please try again.')}
-          useOneTap={false}
-        />
-      </div>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={() => setError('Google sign-in was unsuccessful. Please try again.')}
+              useOneTap={false}
+            />
+          </div>
+        </>
+      )}
 
       <p style={{ textAlign: 'center', marginTop: '1.75rem', marginBottom: 0, fontSize: '0.9rem', color: '#64748b' }}>
         Don&apos;t have an account?{' '}

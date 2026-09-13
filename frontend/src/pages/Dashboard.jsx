@@ -17,11 +17,17 @@ export function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [discovering, setDiscovering] = useState(false);
+  const [discoveryState, setDiscoveryState] = useState(null);
+  const [discoverySources, setDiscoverySources] = useState(null);
 
   const loadDashboard = async () => {
     try {
-      const res = await get('/api/dashboard');
+      const [res, discRes] = await Promise.all([
+        get('/api/dashboard'),
+        get('/api/discovery/status').catch(() => null),
+      ]);
       setData(res);
+      if (discRes) setDiscoverySources(discRes);
     } catch (e) {
       setError(e.message);
     }
@@ -33,12 +39,58 @@ export function Dashboard() {
 
   const handleRunDiscovery = async () => {
     setDiscovering(true);
+    setDiscoveryState({ status: 'running', text: 'Queueing job discovery run…' });
     try {
-      await post('/api/discovery/run');
-      await loadDashboard();
+      const res = await post('/api/discovery/run');
+      const queueJobId = res.queueJobId;
+
+      if (!queueJobId) {
+        setDiscoveryState({ status: 'completed', text: 'Discovery triggered!' });
+        await loadDashboard();
+        setDiscovering(false);
+        return;
+      }
+
+      setDiscoveryState({ status: 'running', text: 'Running discovery… Waiting for worker.' });
+
+      // Poll BullMQ queue job status every 1.5s
+      const pollTimer = setInterval(async () => {
+        try {
+          const statusRes = await get(`/api/discovery/status/${queueJobId}`);
+          if (!statusRes.found || statusRes.state === 'completed') {
+            clearInterval(pollTimer);
+            const foundCount = statusRes.returnvalue?.created ?? statusRes.returnvalue?.discovered ?? 0;
+            setDiscoveryState({
+              status: 'completed',
+              text: `Done: ${foundCount} new job(s) discovered!`,
+            });
+            await loadDashboard();
+            setDiscovering(false);
+          } else if (statusRes.state === 'failed') {
+            clearInterval(pollTimer);
+            setDiscoveryState({
+              status: 'failed',
+              text: `Discovery failed: ${statusRes.failedReason || 'Worker encountered an error'}`,
+            });
+            setDiscovering(false);
+          } else if (statusRes.state === 'active') {
+            setDiscoveryState({ status: 'running', text: 'Running… Fetching live listings from active sources.' });
+          } else if (statusRes.state === 'waiting') {
+            setDiscoveryState({ status: 'running', text: 'Running… Queued in BullMQ.' });
+          }
+        } catch {
+          // Keep polling on transient network hiccup
+        }
+      }, 1500);
+
+      // 45s safety fallback
+      setTimeout(() => {
+        clearInterval(pollTimer);
+        setDiscovering(false);
+      }, 45000);
     } catch (e) {
       setError(`Discovery trigger failed: ${e.message}`);
-    } finally {
+      setDiscoveryState({ status: 'failed', text: `Failed: ${e.message}` });
       setDiscovering(false);
     }
   };
@@ -94,6 +146,86 @@ export function Dashboard() {
           </button>
         </div>
       </div>
+
+      {discoveryState && (
+        <div
+          role="status"
+          style={{
+            background:
+              discoveryState.status === 'running'
+                ? '#eff6ff'
+                : discoveryState.status === 'completed'
+                ? '#f0fdf4'
+                : '#fef2f2',
+            border:
+              discoveryState.status === 'running'
+                ? '1px solid #bfdbfe'
+                : discoveryState.status === 'completed'
+                ? '1px solid #bbf7d0'
+                : '1px solid #fecaca',
+            color:
+              discoveryState.status === 'running'
+                ? '#1d4ed8'
+                : discoveryState.status === 'completed'
+                ? '#15803d'
+                : '#b91c1c',
+            padding: '0.65rem 1rem',
+            borderRadius: '6px',
+            marginBottom: '1rem',
+            fontSize: '0.9rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          <span>{discoveryState.status === 'running' ? '⏳' : discoveryState.status === 'completed' ? '✅' : '⚠️'}</span>
+          <span>{discoveryState.text}</span>
+        </div>
+      )}
+
+      {discoverySources && (
+        <div
+          style={{
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            padding: '0.6rem 1rem',
+            borderRadius: '6px',
+            marginBottom: '1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '0.5rem',
+            fontSize: '0.85rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600, color: '#334155' }}>Active Sources:</span>
+            {discoverySources.sources?.map((s) => (
+              <span
+                key={s.name}
+                style={{
+                  padding: '0.2rem 0.5rem',
+                  borderRadius: '4px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  background: s.active ? '#dcfce7' : '#fee2e2',
+                  color: s.active ? '#166534' : '#991b1b',
+                  border: `1px solid ${s.active ? '#86efac' : '#fca5a5'}`,
+                }}
+                title={s.reason || (s.active ? 'Configured and active' : 'Missing credentials')}
+              >
+                {s.name} {s.country ? `(${s.country.toUpperCase()})` : ''} {s.active ? '✓' : '✗ Disabled'}
+              </span>
+            ))}
+          </div>
+          <span style={{ color: '#64748b', fontSize: '0.8rem' }}>
+            {discoverySources.totalActive} of {discoverySources.totalConfigured} sources active
+          </span>
+        </div>
+      )}
 
       {data.lastDiscovery && (
         <div

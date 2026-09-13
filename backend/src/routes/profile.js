@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createHash } from 'node:crypto';
 import { candidateProfileSchema } from '@job-agent/shared-schemas';
 import { ensureUserCandidate } from '../modules/auth/authService.js';
+import { checkProfileCompleteness } from '../modules/candidate/profileCompleteness.js';
 
 /**
  * @param {import('../app.js').AppDependencies} dependencies
@@ -27,10 +28,13 @@ export function profileRouter({ prisma, profile: defaultProfile, readMasterResum
         });
       }
 
+      const completeness = checkProfileCompleteness(candidate.profile);
+
       return response.json({
         profile: candidate.profile,
         profileVersion: candidate.profileVersion,
         masterResume: candidate.masterResume ?? '',
+        completeness,
       });
     } catch (error) {
       next(error);

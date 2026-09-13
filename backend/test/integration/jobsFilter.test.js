@@ -48,7 +48,10 @@ describe('GET /api/jobs Filter Integration Tests', () => {
       findMany: async ({ where }) => {
         capturedWhere = where;
         return mockJobs.filter((job) => {
-          if (where.status && job.status !== where.status) return false;
+          if (where.status) {
+            if (typeof where.status === 'string' && job.status !== where.status) return false;
+            if (where.status.notIn && where.status.notIn.includes(job.status)) return false;
+          }
           if (where.company?.contains && !job.company.toLowerCase().includes(where.company.contains.toLowerCase())) {
             return false;
           }

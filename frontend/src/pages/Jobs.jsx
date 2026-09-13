@@ -22,6 +22,8 @@ export function Jobs() {
   const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') || '');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
   const [minScoreFilter, setMinScoreFilter] = useState(searchParams.get('minMatchScore') || '');
+  const [showAllDiscovered, setShowAllDiscovered] = useState(searchParams.get('showAll') === 'true');
+  const [discoveryState, setDiscoveryState] = useState(null);
 
   // Debounce ref
   const debounceTimerRef = useRef(null);
@@ -35,6 +37,7 @@ export function Jobs() {
       source: sourceFilter,
       status: statusFilter,
       minMatchScore: minScoreFilter,
+      showAll: showAllDiscovered ? 'true' : undefined,
       ...overrides,
     };
 
@@ -45,7 +48,7 @@ export function Jobs() {
       }
     });
     setSearchParams(newParams, { replace: true });
-  }, [companyFilter, titleFilter, locationFilter, sourceFilter, statusFilter, minScoreFilter, setSearchParams]);
+  }, [companyFilter, titleFilter, locationFilter, sourceFilter, statusFilter, minScoreFilter, showAllDiscovered, setSearchParams]);
 
   // Build query string from active searchParams or current local state
   const buildQueryString = useCallback(() => {
@@ -56,17 +59,27 @@ export function Jobs() {
     const src = searchParams.get('source') ?? sourceFilter;
     const st = searchParams.get('status') ?? statusFilter;
     const score = searchParams.get('minMatchScore') ?? minScoreFilter;
+    const isShowAll = searchParams.get('showAll') === 'true' || showAllDiscovered;
 
     if (company && company.trim()) params.set('company', company.trim());
     if (title && title.trim()) params.set('titleQuery', title.trim());
     if (loc && loc.trim()) params.set('location', loc.trim());
     if (src && src.trim()) params.set('source', src.trim());
     if (st && st.trim()) params.set('status', st.trim());
-    if (score && score.trim()) params.set('minMatchScore', score.trim());
+    if (score && score.trim()) {
+      params.set('minMatchScore', score.trim());
+    } else if (!isShowAll) {
+      // By default: require match score above match threshold (75%)
+      params.set('minMatchScore', '75');
+    }
+
+    if (isShowAll) {
+      params.set('showAll', 'true');
+    }
 
     const qs = params.toString();
     return qs ? `?${qs}` : '';
-  }, [searchParams, companyFilter, titleFilter, locationFilter, sourceFilter, statusFilter, minScoreFilter]);
+  }, [searchParams, companyFilter, titleFilter, locationFilter, sourceFilter, statusFilter, minScoreFilter, showAllDiscovered]);
 
   const reload = useCallback(async () => {
     try {
@@ -99,6 +112,7 @@ export function Jobs() {
     setSourceFilter('');
     setStatusFilter('');
     setMinScoreFilter('');
+    setShowAllDiscovered(false);
     setSearchParams(new URLSearchParams(), { replace: true });
   };
 
@@ -117,12 +131,58 @@ export function Jobs() {
   const handleDiscovery = async () => {
     setGeneralError('');
     setDiscovering(true);
+    setDiscoveryState({ status: 'running', text: 'Queueing job discovery run…' });
     try {
-      await post('/api/discovery/run');
-      await reload();
+      const res = await post('/api/discovery/run');
+      const queueJobId = res.queueJobId;
+
+      if (!queueJobId) {
+        setDiscoveryState({ status: 'completed', text: 'Discovery triggered!' });
+        await reload();
+        setDiscovering(false);
+        return;
+      }
+
+      setDiscoveryState({ status: 'running', text: 'Running discovery… Waiting for worker.' });
+
+      // Poll BullMQ queue job status every 1.5s
+      const pollTimer = setInterval(async () => {
+        try {
+          const statusRes = await get(`/api/discovery/status/${queueJobId}`);
+          if (!statusRes.found || statusRes.state === 'completed') {
+            clearInterval(pollTimer);
+            const foundCount = statusRes.returnvalue?.created ?? statusRes.returnvalue?.discovered ?? 0;
+            setDiscoveryState({
+              status: 'completed',
+              text: `Done: ${foundCount} new job(s) discovered!`,
+            });
+            await reload();
+            setDiscovering(false);
+          } else if (statusRes.state === 'failed') {
+            clearInterval(pollTimer);
+            setDiscoveryState({
+              status: 'failed',
+              text: `Discovery failed: ${statusRes.failedReason || 'Worker execution error'}`,
+            });
+            setDiscovering(false);
+          } else if (statusRes.state === 'active') {
+            setDiscoveryState({ status: 'running', text: 'Running… Fetching listings from internet sources.' });
+          } else if (statusRes.state === 'waiting') {
+            setDiscoveryState({ status: 'running', text: 'Running… Queued in BullMQ.' });
+          }
+        } catch {
+          // Continue polling on transient error
+        }
+      }, 1500);
+
+      // 45s safety timeout
+      setTimeout(() => {
+        clearInterval(pollTimer);
+        setDiscovering(false);
+      }, 45000);
     } catch (e) {
       setGeneralError(`Discovery failed: ${e.message}`);
-    } finally {
+      setDiscoveryState({ status: 'failed', text: `Discovery error: ${e.message}` });
       setDiscovering(false);
     }
   };
@@ -474,19 +534,70 @@ export function Jobs() {
         </div>
       </div>
 
+      {discoveryState && (
+        <div
+          role="status"
+          style={{
+            background:
+              discoveryState.status === 'running'
+                ? '#eff6ff'
+                : discoveryState.status === 'completed'
+                ? '#f0fdf4'
+                : '#fef2f2',
+            border:
+              discoveryState.status === 'running'
+                ? '1px solid #bfdbfe'
+                : discoveryState.status === 'completed'
+                ? '1px solid #bbf7d0'
+                : '1px solid #fecaca',
+            color:
+              discoveryState.status === 'running'
+                ? '#1d4ed8'
+                : discoveryState.status === 'completed'
+                ? '#15803d'
+                : '#b91c1c',
+            padding: '0.65rem 1rem',
+            borderRadius: '6px',
+            marginBottom: '1rem',
+            fontSize: '0.9rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          <span>{discoveryState.status === 'running' ? '⏳' : discoveryState.status === 'completed' ? '✅' : '⚠️'}</span>
+          <span>{discoveryState.text}</span>
+        </div>
+      )}
+
       {/* Part 4: Jobs Filter Bar */}
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <span style={{ fontWeight: 700, color: '#334155', fontSize: '0.9rem' }}>🔍 Filter &amp; Search Jobs</span>
-          {(companyFilter || titleFilter || locationFilter || sourceFilter || statusFilter || minScoreFilter) && (
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '0.25rem 0.6rem', fontSize: '0.8rem' }}
-            >
-              Reset Filters ✕
-            </button>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', fontWeight: 600, color: '#334155', cursor: 'pointer', background: showAllDiscovered ? '#fef3c7' : '#f8fafc', padding: '0.25rem 0.5rem', borderRadius: '4px', border: `1px solid ${showAllDiscovered ? '#f59e0b' : '#cbd5e1'}` }}>
+              <input
+                type="checkbox"
+                checked={showAllDiscovered}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setShowAllDiscovered(val);
+                  syncFiltersToParams({ showAll: val ? 'true' : undefined });
+                }}
+              />
+              Show all discovered (unscored &amp; failed)
+            </label>
+            {(companyFilter || titleFilter || locationFilter || sourceFilter || statusFilter || minScoreFilter || showAllDiscovered) && (
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '0.25rem 0.6rem', fontSize: '0.8rem' }}
+              >
+                Reset Filters ✕
+              </button>
+            )}
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>

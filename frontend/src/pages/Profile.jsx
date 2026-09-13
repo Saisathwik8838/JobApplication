@@ -24,6 +24,7 @@ export function Profile() {
   const [workAuthorization, setWorkAuthorization] = useState('Authorized to work');
   const [skills, setSkills] = useState('');
   const [masterResume, setMasterResume] = useState('');
+  const [completeness, setCompleteness] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -73,6 +74,7 @@ export function Profile() {
         setSkills(skillsList.join(', '));
 
         setMasterResume(data.masterResume || '');
+        setCompleteness(data.completeness || null);
         setLoading(false);
       })
       .catch((err) => {
@@ -176,6 +178,17 @@ export function Profile() {
       {success && (
         <div role="status" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1.25rem' }}>
           {success}
+        </div>
+      )}
+
+      {completeness && completeness.warnings?.length > 0 && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '0.85rem 1rem', marginBottom: '1.25rem', color: '#92400e' }}>
+          <strong>⚠️ Profile Completeness Suggestions (Score: {completeness.score}/100):</strong>
+          <ul style={{ margin: '0.35rem 0 0 1.25rem', padding: 0, fontSize: '0.85rem' }}>
+            {completeness.warnings.map((w, idx) => (
+              <li key={idx} style={{ marginTop: '0.2rem' }}>{w}</li>
+            ))}
+          </ul>
         </div>
       )}
 

@@ -13,6 +13,7 @@ export async function runDiscovery({ prisma, sources, logger, queues }) {
     discovered: 0,
     created: 0,
     duplicates: 0,
+    filtered: 0,
     errors: 0,
   };
 
@@ -40,6 +41,8 @@ export async function runDiscovery({ prisma, sources, logger, queues }) {
               },
             );
           }
+        } else if (result.rejectedReason) {
+          stats.filtered += 1;
         } else {
           stats.duplicates += 1;
         }
@@ -128,7 +131,7 @@ export async function runDiscovery({ prisma, sources, logger, queues }) {
           type: 'DISCOVERY_SUMMARY',
           subject: `New jobs found: ${stats.created} added`,
           text: `Discovered ${stats.created} new real job(s) from internet sources:\n\n${sampleList}${moreText}\n\nView jobs at: ${frontendUrl}/jobs`,
-          to: targetRecipient || 'candidate@example.com',
+          to: targetRecipient || process.env.NOTIFICATION_TO || null,
           metadata: {
             createdCount: stats.created,
             sources: [...new Set(createdJobs.map((j) => j.source))],
