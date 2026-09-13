@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lever Sandbox - Senior Backend Engineer</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 2rem auto; max-width: 650px; color: #333; line-height: 1.5; }
+    header { border-bottom: 2px solid #2563eb; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+    label { display: block; margin-top: 1.25rem; font-weight: 600; font-size: 0.95rem; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 0.6rem; margin-top: 0.35rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+    button[type="submit"] { margin-top: 1.75rem; padding: 0.8rem 1.8rem; background: #2563eb; color: #fff; font-size: 1.05rem; font-weight: 600; border: 0; border-radius: 4px; cursor: pointer; }
+    button[type="submit"]:hover { background: #1d4ed8; }
+    #confirmation { display: none; background: #e8f5e9; border: 1px solid #c8e6c9; color: #2e7d32; padding: 1.5rem; margin-top: 1.5rem; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 style="margin: 0; font-size: 1.6rem;">CRED</h1>
+    <h2 style="margin: 0.25rem 0 0 0; font-size: 1.2rem; color: #555;">Senior Backend Engineer</h2>
+    <p style="margin: 0.25rem 0 0 0; color: #777;">Bengaluru • Full-time • Engineering</p>
+  </header>
+  <main>
+    <form id="lever_form" data-qa="application-form" onsubmit="event.preventDefault(); document.getElementById('confirmation').style.display='block'; window.location.hash='submitted';">
+      <label for="name">Full Name</label>
+      <input id="name" name="name" data-qa="name-input" required />
+
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" data-qa="email-input" required />
+
+      <label for="phone">Phone</label>
+      <input id="phone" name="phone" type="tel" data-qa="phone-input" />
+
+      <label for="org">Current Company</label>
+      <input id="org" name="org" data-qa="org-input" />
+
+      <label for="urls">LinkedIn URL</label>
+      <input id="urls" name="urls[LinkedIn]" data-qa="urls-input" />
+
+      <label for="resume">Resume / CV</label>
+      <input id="resume" name="resume" type="file" data-qa="resume-upload-input" />
+
+      <button id="submit_lever" type="submit" data-qa="btn-submit">Submit application</button>
+    </form>
+    <div id="confirmation">
+      <h3 style="margin-top: 0;">Application Submitted!</h3>
+      <p>Thank you for your interest. Your application has been submitted to CRED.</p>
+    </div>
+  </main>
+</body>
+</html>

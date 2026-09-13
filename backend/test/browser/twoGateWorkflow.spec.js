@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { GenericApplicationAdapter } from '../../src/modules/browser/adapters/genericApplicationAdapter.js';
+import { LeverAdapter } from '../../src/modules/browser/adapters/leverAdapter.js';
+import { WorkdayAdapter } from '../../src/modules/browser/adapters/workdayAdapter.js';
+import { renderResumeToPdf } from '../../src/modules/resume/resumeService.js';
 import { ApplicationSession } from '../../src/modules/browser/applicationSession.js';
 import { SubmissionManager } from '../../src/modules/browser/submissionManager.js';
 import { assertTransition, InvalidStateTransitionError } from '../../src/modules/applications/applicationStateMachine.js';
@@ -289,6 +292,152 @@ test.describe('Two-Gate Application Flow (Live Sandbox Greenhouse Form)', () => 
     assertTransition(appState, 'SUBMITTED');
     appState = 'SUBMITTED';
     expect(appState).toBe('SUBMITTED');
+  });
+});
+
+test.describe('Lever Adapter Flow (Live Sandbox Lever Form with data-qa)', () => {
+  const fixturePath = pathToFileURL(
+    resolve(process.cwd(), '..', 'browser', 'adapters', '__fixtures__', 'lever_sandbox.html')
+  ).href;
+
+  test('fills Lever data-qa fields and uploads resume, halts at Gate 2, and submits on approval', async ({ page }) => {
+    await page.goto(fixturePath);
+    await expect(page.locator('h1')).toHaveText('CRED');
+    await expect(page.locator('#confirmation')).not.toBeVisible();
+
+    const resumePath = await renderResumeToPdf({
+      text: 'Software Engineer with experience in React and Node.js.\nSkills: JavaScript, TypeScript, Go.',
+      candidateName: 'Priya Sharma',
+      applicationId: 'lever-test-1',
+    });
+
+    const answers = [
+      { question: 'Full Name', answer: 'Priya Sharma', status: 'READY' },
+      { question: 'Email', answer: 'priya.sharma@example.com', status: 'READY' },
+      { question: 'Phone', answer: '+91-9876543210', status: 'READY' },
+      { question: 'Current Company', answer: 'FinTech Labs India', status: 'READY' },
+      { question: 'LinkedIn URL', answer: 'https://linkedin.com/in/priyasharma', status: 'READY' },
+    ];
+
+    const mockJob = {
+      id: 'job-lever-201',
+      title: 'Senior Backend Engineer',
+      company: 'CRED',
+      url: fixturePath,
+    };
+
+    let appState = 'APPROVED';
+    assertTransition(appState, 'FILLING');
+    appState = 'FILLING';
+
+    const adapter = new LeverAdapter();
+    const session = new ApplicationSession({
+      page,
+      job: mockJob,
+      application: { id: 'app-lever-201', status: appState },
+      answers,
+      resumePath,
+    });
+
+    const fillResult = await adapter.fill(session);
+    expect(fillResult.status).toBe('READY_FOR_REVIEW');
+
+    // Verify fields were filled via data-qa attributes
+    await expect(page.locator('[data-qa="name-input"]')).toHaveValue('Priya Sharma');
+    await expect(page.locator('[data-qa="email-input"]')).toHaveValue('priya.sharma@example.com');
+    await expect(page.locator('[data-qa="phone-input"]')).toHaveValue('+91-9876543210');
+    await expect(page.locator('[data-qa="org-input"]')).toHaveValue('FinTech Labs India');
+
+    // Gate 2 Safety check: form must NOT be submitted yet
+    await expect(page.locator('#confirmation')).not.toBeVisible();
+
+    // Human gives Gate 2 approval -> submit
+    assertTransition(appState, 'SUBMITTING');
+    appState = 'SUBMITTING';
+
+    const submitResult = await new SubmissionManager({ requireApproval: true }).submit({
+      page,
+      job: mockJob,
+      application: { id: 'app-lever-201', status: appState },
+      answers,
+      resumePath,
+    });
+
+    expect(submitResult.status).toBe('SUBMITTED');
+    await expect(page.locator('#confirmation')).toBeVisible();
+  });
+});
+
+test.describe('Workday Adapter Flow (Live Sandbox Multi-Step Wizard)', () => {
+  const fixturePath = pathToFileURL(
+    resolve(process.cwd(), '..', 'browser', 'adapters', '__fixtures__', 'workday_sandbox.html')
+  ).href;
+
+  test('advances through Workday wizard steps, halts at review page without submitting, and submits on approval', async ({ page }) => {
+    await page.goto(fixturePath);
+    await expect(page.locator('h1')).toHaveText('Enterprise Cloud Tech');
+    await expect(page.locator('#step1')).toBeVisible();
+    await expect(page.locator('#step2')).not.toBeVisible();
+    await expect(page.locator('#step3')).not.toBeVisible();
+
+    const resumePath = await renderResumeToPdf({
+      text: 'Lead Cloud Architect.\nSpecialized in AWS, Kubernetes, and Terraform.',
+      candidateName: 'Rahul Verma',
+      applicationId: 'workday-test-1',
+    });
+
+    const answers = [
+      { question: 'First Name', answer: 'Rahul', status: 'READY' },
+      { question: 'Last Name', answer: 'Verma', status: 'READY' },
+      { question: 'Email', answer: 'rahul.verma@example.com', status: 'READY' },
+      { question: 'Phone', answer: '+91-9988776655', status: 'READY' },
+      { question: 'Skills', answer: 'AWS, Kubernetes, Go, Python', status: 'READY' },
+    ];
+
+    const mockJob = {
+      id: 'job-wd-301',
+      title: 'Lead Cloud Architect',
+      company: 'Enterprise Cloud Tech',
+      url: fixturePath,
+    };
+
+    let appState = 'APPROVED';
+    assertTransition(appState, 'FILLING');
+    appState = 'FILLING';
+
+    const adapter = new WorkdayAdapter();
+    const session = new ApplicationSession({
+      page,
+      job: mockJob,
+      application: { id: 'app-wd-301', status: appState },
+      answers,
+      resumePath,
+    });
+
+    const fillResult = await adapter.fill(session);
+    expect(fillResult.status).toBe('READY_FOR_REVIEW');
+
+    // Wizard should have stepped through Step 1 and Step 2, and landed on Step 3 (Review)
+    await expect(page.locator('#step3')).toBeVisible();
+    await expect(page.locator('#review_summary')).toHaveText('All steps completed. Ready for final review.');
+
+    // Gate 2 Safety check: Final submission MUST NOT be executed automatically
+    await expect(page.locator('#confirmation')).not.toBeVisible();
+
+    // Human approves Gate 2 -> submit
+    assertTransition(appState, 'SUBMITTING');
+    appState = 'SUBMITTING';
+
+    const submitResult = await new SubmissionManager({ requireApproval: true }).submit({
+      page,
+      job: mockJob,
+      application: { id: 'app-wd-301', status: appState },
+      answers,
+      resumePath,
+    });
+
+    expect(submitResult.status).toBe('SUBMITTED');
+    await expect(page.locator('#confirmation')).toBeVisible();
   });
 });
 

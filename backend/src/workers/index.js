@@ -19,6 +19,7 @@ import { selectAdapter } from '../modules/browser/adapterRegistry.js';
 import { SubmissionManager } from '../modules/browser/submissionManager.js';
 import { transitionApplication } from '../modules/applications/applicationStateMachine.js';
 import { NotificationDispatcher } from '../modules/notifications/notificationDispatcher.js';
+import { renderResumeToPdf } from '../modules/resume/resumeService.js';
 
 const config = loadConfig();
 const prisma = new PrismaClient();
@@ -249,6 +250,7 @@ new Worker(
       include: {
         job: true,
         answers: true,
+        resumeVersion: true,
         user: {
           include: {
             candidate: true,
@@ -268,6 +270,19 @@ new Worker(
       application.user?.email ||
       config.NOTIFICATION_TO ||
       'candidate@example.com';
+
+    let resumePath = null;
+    if (application.resumeVersion?.content) {
+      try {
+        resumePath = await renderResumeToPdf({
+          text: application.resumeVersion.content,
+          candidateName: userProfile?.candidate?.name || 'Candidate',
+          applicationId: application.id,
+        });
+      } catch (err) {
+        logger.warn({ err: err.message }, 'Failed to render tailored resume PDF; continuing without upload path');
+      }
+    }
 
     if (mode === 'fill') {
       if (!['APPROVED', 'FILLING', 'FILLED_AWAITING_RECHECK', 'MANUAL_INTERVENTION'].includes(application.status)) {
@@ -326,6 +341,7 @@ new Worker(
         job: application.job,
         application,
         answers: application.answers,
+        resumePath,
       });
 
       const filled = await adapter.fill(session);
@@ -589,6 +605,7 @@ new Worker(
           job: application.job,
           application,
           answers: application.answers,
+          resumePath,
         });
 
         const reFilled = await adapter.fill(session);
@@ -628,6 +645,7 @@ new Worker(
         job: application.job,
         application,
         answers: application.answers,
+        resumePath,
       });
 
       const result = await new SubmissionManager({

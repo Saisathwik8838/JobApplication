@@ -7,7 +7,7 @@ export function dashboardRouter({ prisma }) {
   router.get('/', async (request, response, next) => {
     try {
       const userId = request.user?.id;
-      const [jobs, applications, highQualityMatches, candidateJobs, lastRun] = await Promise.all([
+      const [jobs, applications, highQualityMatches, candidateJobs, lastRun, sourceHealth] = await Promise.all([
         prisma.job.groupBy({ by: ['status'], _count: true }),
         prisma.application.groupBy({
           by: ['status'],
@@ -43,6 +43,9 @@ export function dashboardRouter({ prisma }) {
               orderBy: { completedAt: 'desc' },
             })
           : Promise.resolve(null),
+        prisma.sourceHealth?.findMany
+          ? prisma.sourceHealth.findMany({ orderBy: { source: 'asc' } })
+          : Promise.resolve([]),
       ]);
 
       const get = (items, status) => items?.find?.((item) => item.status === status)?._count ?? 0;
@@ -82,6 +85,7 @@ export function dashboardRouter({ prisma }) {
         interviews: get(applications, 'INTERVIEW'),
         topMatches,
         lastDiscovery: lastRun ? { completedAt: lastRun.completedAt, stats: lastRun.stats } : null,
+        sourceHealth: sourceHealth || [],
       });
     } catch (error) {
       next(error);

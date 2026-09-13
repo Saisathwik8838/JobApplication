@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Workday Sandbox - Application Wizard</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 2rem auto; max-width: 650px; color: #333; line-height: 1.5; }
+    header { border-bottom: 2px solid #0875e1; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+    label { display: block; margin-top: 1.25rem; font-weight: 600; font-size: 0.95rem; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 0.6rem; margin-top: 0.35rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+    .nav-btn { margin-top: 1.75rem; padding: 0.8rem 1.8rem; background: #0875e1; color: #fff; font-size: 1.05rem; font-weight: 600; border: 0; border-radius: 4px; cursor: pointer; }
+    .nav-btn:hover { background: #065cb3; }
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+    #confirmation { display: none; background: #e8f5e9; border: 1px solid #c8e6c9; color: #2e7d32; padding: 1.5rem; margin-top: 1.5rem; border-radius: 6px; }
+  </style>
+</head>
+<body data-automation-id="jobPostingPage">
+  <header>
+    <h1 style="margin: 0; font-size: 1.6rem;">Enterprise Cloud Tech</h1>
+    <h2 style="margin: 0.25rem 0 0 0; font-size: 1.2rem; color: #555;">Lead Cloud Architect</h2>
+    <p style="margin: 0.25rem 0 0 0; color: #777;">Bengaluru • Full-time</p>
+  </header>
+  <main>
+    <form id="workday_form" onsubmit="event.preventDefault(); document.getElementById('confirmation').style.display='block'; window.location.hash='submitted';">
+      <!-- Step 1: Contact Information -->
+      <section id="step1" class="step-panel active" data-automation-id="myInformationPage">
+        <h3>Contact Information</h3>
+        <label for="first_name">First Name</label>
+        <input id="first_name" name="first_name" data-automation-id="legalNameSection_firstName" required />
+
+        <label for="last_name">Last Name</label>
+        <input id="last_name" name="last_name" data-automation-id="legalNameSection_lastName" required />
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" data-automation-id="email" required />
+
+        <label for="phone">Phone</label>
+        <input id="phone" name="phone" type="tel" data-automation-id="phone-number" />
+
+        <button type="button" class="nav-btn" data-automation-id="bottom-navigation-next-button" onclick="goToStep(2)">Save and Continue</button>
+      </section>
+
+      <!-- Step 2: Experience & Resume -->
+      <section id="step2" class="step-panel" data-automation-id="myExperiencePage">
+        <h3>My Experience</h3>
+        <label for="skills">Skills</label>
+        <input id="skills" name="skills" data-automation-id="skills-prompt" required />
+
+        <div data-automation-id="file-upload-drop-zone">
+          <label for="resume_file">Resume / CV</label>
+          <input id="resume_file" name="resume" type="file" data-automation-id="file-upload-input-ref" />
+        </div>
+
+        <button type="button" class="nav-btn" data-automation-id="bottom-navigation-next-button" onclick="goToStep(3)">Next</button>
+      </section>
+
+      <!-- Step 3: Review Page -->
+      <section id="step3" class="step-panel" data-automation-id="reviewPage">
+        <h3>Review and Submit</h3>
+        <p>Please review your information before final submission.</p>
+        <div id="review_summary">All steps completed. Ready for final review.</div>
+
+        <button id="submit_workday" type="submit" class="nav-btn" data-automation-id="bottom-navigation-submit-button">Submit Application</button>
+      </section>
+    </form>
+
+    <div id="confirmation">
+      <h3 style="margin-top: 0;">Application Submitted!</h3>
+      <p>Your Workday application was received.</p>
+    </div>
+  </main>
+
+  <script>
+    function goToStep(stepNum) {
+      document.querySelectorAll('.step-panel').forEach(function(el) { el.classList.remove('active'); });
+      document.getElementById('step' + stepNum).classList.add('active');
+    }
+  </script>
+</body>
+</html>

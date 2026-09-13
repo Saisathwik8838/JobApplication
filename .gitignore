@@ -12,3 +12,5 @@ storageState.json
 backend/src/generated/
 *.pem
 *.key
+backend/storage/
+storage/

@@ -1,3 +1,6 @@
+import { fetchWithRetry } from '../httpRetry.js';
+import { normalizeIndianLocation, formatIndianSalary } from '../localization.js';
+
 /**
  * Adzuna India Job Search API source.
  * Official developer API with dedicated India job listings.
@@ -9,7 +12,7 @@ export class AdzunaJobSource {
     this.type = 'api';
     this.appId = options.appId || process.env.ADZUNA_APP_ID || '';
     this.appKey = options.appKey || process.env.ADZUNA_APP_KEY || '';
-    this.country = options.country || 'in';
+    this.country = options.country || process.env.ADZUNA_COUNTRY || 'in';
     this.baseUrl = options.baseUrl || `https://api.adzuna.com/v1/api/jobs/${this.country}/search/1`;
     this.logger = options.logger;
   }
@@ -32,12 +35,19 @@ export class AdzunaJobSource {
     url.searchParams.set('results_per_page', '50');
     url.searchParams.set('content-type', 'application/json');
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        accept: 'application/json',
-        'user-agent': 'AI-Job-Application-Agent/1.0 (respectful public-feed client)',
+    const response = await fetchWithRetry(
+      url.toString(),
+      {
+        headers: {
+          accept: 'application/json',
+          'user-agent': 'AI-Job-Application-Agent/1.0 (respectful public-feed client)',
+        },
       },
-    });
+      {
+        sourceName: this.name,
+        logger: this.logger,
+      }
+    );
 
     if (!response.ok) {
       throw new Error(`Adzuna API returned HTTP ${response.status}`);
@@ -49,16 +59,11 @@ export class AdzunaJobSource {
     return results.map((item) => {
       let salary = null;
       if (item.salary_min || item.salary_max) {
-        if (item.salary_min && item.salary_max) {
-          salary = `₹${item.salary_min.toLocaleString('en-IN')} - ₹${item.salary_max.toLocaleString('en-IN')}`;
-        } else if (item.salary_min) {
-          salary = `From ₹${item.salary_min.toLocaleString('en-IN')}`;
-        } else {
-          salary = `Up to ₹${item.salary_max.toLocaleString('en-IN')}`;
-        }
+        salary = formatIndianSalary(item.salary_min, item.salary_max);
       }
 
-      const location = item.location?.display_name || 'India';
+      const rawLocation = item.location?.display_name || 'India';
+      const location = normalizeIndianLocation(rawLocation);
 
       return {
         source: this.name,

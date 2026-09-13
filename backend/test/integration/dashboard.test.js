@@ -115,6 +115,18 @@ describe('GET /api/dashboard Integration Test', () => {
           stats: { created: 5 },
         }),
       },
+      sourceHealth: {
+        findMany: async () => [
+          {
+            id: 'sh-1',
+            source: 'adzuna',
+            status: 'HEALTHY',
+            jobCount: 45,
+            lastSuccessfulRun: new Date('2026-09-12T12:00:00Z'),
+            lastError: null,
+          },
+        ],
+      },
     };
 
     const dependencies = {
@@ -148,6 +160,12 @@ describe('GET /api/dashboard Integration Test', () => {
     expect(response.body).toHaveProperty('awaitingApproval', 1);
     expect(response.body).toHaveProperty('lastDiscovery');
     expect(response.body.lastDiscovery.stats.created).toBe(5);
+
+    // Assert sourceHealth is present
+    expect(response.body).toHaveProperty('sourceHealth');
+    expect(response.body.sourceHealth).toHaveLength(1);
+    expect(response.body.sourceHealth[0].source).toBe('adzuna');
+    expect(response.body.sourceHealth[0].status).toBe('HEALTHY');
 
     // Assert topMatches is present and correctly shaped
     expect(Array.isArray(response.body.topMatches)).toBe(true);

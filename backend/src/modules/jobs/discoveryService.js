@@ -44,16 +44,59 @@ export async function runDiscovery({ prisma, sources, logger, queues }) {
           stats.duplicates += 1;
         }
       }
+
+      if (prisma?.sourceHealth) {
+        await prisma.sourceHealth
+          .upsert({
+            where: { source: source.name },
+            update: {
+              lastSuccessfulRun: new Date(),
+              jobCount: jobs.length,
+              status: 'HEALTHY',
+              lastError: null,
+            },
+            create: {
+              source: source.name,
+              lastSuccessfulRun: new Date(),
+              jobCount: jobs.length,
+              status: 'HEALTHY',
+              lastError: null,
+            },
+          })
+          .catch((err) => logger.warn({ err: err.message }, 'Failed to record sourceHealth'));
+      }
     } catch (error) {
       stats.errors += 1;
+
+      const isRateLimited = Boolean(error.status === 429 || error.isRateLimited);
+      const status = isRateLimited ? 'RATE_LIMITED' : 'ERROR';
 
       logger.error(
         {
           source: source.name,
           error: error.message,
+          isRateLimited,
         },
         'Job source failed',
       );
+
+      if (prisma?.sourceHealth) {
+        await prisma.sourceHealth
+          .upsert({
+            where: { source: source.name },
+            update: {
+              lastError: error.message,
+              status,
+            },
+            create: {
+              source: source.name,
+              lastError: error.message,
+              status,
+              jobCount: 0,
+            },
+          })
+          .catch((err) => logger.warn({ err: err.message }, 'Failed to record sourceHealth'));
+      }
     }
   }
 

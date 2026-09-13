@@ -543,11 +543,13 @@ export function Jobs() {
               style={{ width: '100%', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem', background: '#fff' }}
             >
               <option value="">All Sources</option>
-              <option value="remotive">Remotive</option>
-              <option value="arbeitnow">Arbeitnow</option>
-              <option value="adzuna">Adzuna</option>
+              <option value="adzuna">Adzuna India</option>
+              <option value="ncs">National Career Service (NCS)</option>
+              <option value="company-career">Company Career Boards</option>
               <option value="greenhouse">Greenhouse</option>
               <option value="lever">Lever</option>
+              <option value="arbeitnow">Arbeitnow</option>
+              <option value="remotive">Remotive</option>
               <option value="custom">Custom / Other</option>
             </select>
           </div>
@@ -679,9 +681,29 @@ export function Jobs() {
                       <div style={{ color: '#334155', fontWeight: 500, fontSize: '0.95rem' }}>
                         {job.title}
                       </div>
-                      <small style={{ color: '#64748b' }}>
-                        Source: {job.source} • ID: {job.id.slice(0, 8)}…
-                      </small>
+                      <div style={{ marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '4px',
+                            background: '#e0f2fe',
+                            color: '#0369a1',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          {job.source}
+                        </span>
+                        {job.discoveredAt && (
+                          <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                            Discovered: {new Date(job.discoveredAt).toLocaleDateString([], { month: 'short', day: 'numeric' })} at {new Date(job.discoveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                          ID: {job.id.slice(0, 8)}…
+                        </span>
+                      </div>
 
                       {/* Ineligible alert */}
                       {isIneligible && (

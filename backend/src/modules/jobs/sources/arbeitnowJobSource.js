@@ -1,3 +1,6 @@
+import { fetchWithRetry } from '../httpRetry.js';
+import { normalizeIndianLocation } from '../localization.js';
+
 /**
  * Arbeitnow public job board API source.
  * Public, unauthenticated API providing remote and tech jobs worldwide.
@@ -8,6 +11,7 @@ export class ArbeitnowJobSource {
     this.name = 'arbeitnow';
     this.type = 'api';
     this.url = options.url || 'https://www.arbeitnow.com/api/job-board-api';
+    this.logger = options.logger;
   }
 
   /**
@@ -15,12 +19,19 @@ export class ArbeitnowJobSource {
    * @returns {Promise<Array<object>>}
    */
   async discover() {
-    const response = await fetch(this.url, {
-      headers: {
-        accept: 'application/json',
-        'user-agent': 'AI-Job-Application-Agent/1.0 (respectful public-feed client)',
+    const response = await fetchWithRetry(
+      this.url,
+      {
+        headers: {
+          accept: 'application/json',
+          'user-agent': 'AI-Job-Application-Agent/1.0 (respectful public-feed client)',
+        },
       },
-    });
+      {
+        sourceName: this.name,
+        logger: this.logger,
+      }
+    );
 
     if (!response.ok) {
       throw new Error(`Arbeitnow API returned HTTP ${response.status}`);
@@ -36,12 +47,13 @@ export class ArbeitnowJobSource {
         return item.remote === true || !loc || loc.includes('india') || loc.includes('remote') || loc.includes('worldwide');
       })
       .map((item) => {
-        let location = 'Remote';
+        let rawLocation = 'Remote';
         if (item.remote && item.location) {
-          location = `${item.location} (Remote)`;
+          rawLocation = `${item.location} (Remote)`;
         } else if (item.location) {
-          location = item.location;
+          rawLocation = item.location;
         }
+        const location = normalizeIndianLocation(rawLocation);
 
         const employmentType = Array.isArray(item.job_types)
           ? item.job_types.join(', ')

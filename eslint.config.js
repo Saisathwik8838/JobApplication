@@ -11,6 +11,11 @@ export default [
       parserOptions: { ecmaFeatures: { jsx: true } },
       globals: {
         process: 'readonly',
+        Buffer: 'readonly',
+        Headers: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
+        navigator: 'readonly',
         URL: 'readonly',
         URLSearchParams: 'readonly',
         fetch: 'readonly',

@@ -21,6 +21,7 @@ export class GenericApplicationAdapter {
     let fieldsFilled = 0;
     const filledValues = {};
 
+    // 1. Text and select fields from resolved truthful answers
     for (const answer of session.answers) {
       if (answer.status !== 'READY' || !answer.answer) continue;
       const target = session.page.getByLabel(answer.question, { exact: false });
@@ -31,6 +32,39 @@ export class GenericApplicationAdapter {
       }
     }
 
+    // 2. Shared resume file upload step (if session.resumePath is provided)
+    let resumeUploaded = false;
+    if (session.resumePath) {
+      try {
+        const fileInputs = session.page.locator('input[type="file"]');
+        const fileInputCount = await fileInputs.count();
+        if (fileInputCount > 0) {
+          let targetInput = null;
+          for (let i = 0; i < fileInputCount; i += 1) {
+            const input = fileInputs.nth(i);
+            const id = (await input.getAttribute('id')) || '';
+            const name = (await input.getAttribute('name')) || '';
+            const aria = (await input.getAttribute('aria-label')) || '';
+            if (/resume|cv/i.test(`${id} ${name} ${aria}`) || fileInputCount === 1) {
+              targetInput = input;
+              break;
+            }
+          }
+          if (!targetInput) {
+            targetInput = fileInputs.first();
+          }
+
+          await targetInput.setInputFiles(session.resumePath);
+          resumeUploaded = true;
+          fieldsFilled += 1;
+          filledValues['resume'] = session.resumePath;
+        }
+      } catch {
+        // Continue gracefully if file input cannot be attached directly
+      }
+    }
+
+    // 3. Capture filled values from DOM
     const captured = await session.page
       .evaluate(() => {
         const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"]), textarea, select'));
@@ -51,6 +85,7 @@ export class GenericApplicationAdapter {
 
     Object.assign(filledValues, captured);
 
+    // 4. Validate unexpected required fields
     const missingUnlabeled = fields.filter((field) => field.required && !field.label && !field.name);
     if (missingUnlabeled.length) {
       return {
@@ -62,10 +97,16 @@ export class GenericApplicationAdapter {
       };
     }
 
-    // Identify required fields that are not filled
+    // 5. Identify required fields that are not filled
     const missingRequired = [];
     for (const field of fields) {
       if (!field.required) continue;
+
+      // If this is a file upload field and resume was uploaded, it is satisfied
+      if (field.type === 'file' && resumeUploaded) {
+        continue;
+      }
+
       const fieldId = field.label || field.name;
       const hasValue =
         filledValues[fieldId] ||
