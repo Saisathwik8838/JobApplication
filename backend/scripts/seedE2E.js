@@ -1,12 +1,14 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { createHash } from 'node:crypto';
+import { loadCandidateProfile } from '../src/modules/candidate/profileRepository.js';
+import { resolve } from 'node:path';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const profileRes = await fetch('http://localhost:3000/api/profile').then((r) => r.json());
-  const profileVersion = profileRes.profileVersion;
+  const profilePath = resolve(process.cwd(), 'profile/candidate_profile.yaml');
+  const { version: profileVersion } = await loadCandidateProfile(profilePath);
   console.log('Profile version:', profileVersion);
 
   // 1. Ineligible Job
